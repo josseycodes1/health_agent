@@ -12,7 +12,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--base-url',
             type=str,
-            default='http://localhost:8000',
+            default='https://web-production-8b01c.up.railway.app',
             help='Base URL for the application'
         )
     
@@ -20,7 +20,7 @@ class Command(BaseCommand):
         base_url = options['base_url']
         
         try:
-            # Send request to our own daily tip endpoint
+           
             response = requests.post(
                 f"{base_url}/api/daily-tip",
                 timeout=30

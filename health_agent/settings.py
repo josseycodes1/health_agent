@@ -4,11 +4,11 @@ import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Create logs directory if it doesn't exist
+
 LOG_DIR = BASE_DIR / 'logs'
 LOG_DIR.mkdir(exist_ok=True)
 
-# Security settings for production
+
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-&$y+arjv_@ke&p$ue)(xe+_g@g-vh_rng)+1xx2o#x(dzm!=(c')
 
 DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
@@ -20,7 +20,7 @@ ALLOWED_HOSTS = [
     '.railway.app'
 ]
 
-# For any additional domains from environment
+
 if os.environ.get('ALLOWED_HOSTS'):
     ALLOWED_HOSTS.extend(os.environ.get('ALLOWED_HOSTS').split(','))
 
@@ -66,7 +66,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'health_agent.wsgi.application'
 
-# Database configuration - Use your PostgreSQL URL directly
+
 DATABASES = {
     'default': dj_database_url.parse(
         'postgresql://postgres:odWRCDFdGZazLxEBVzdKoFuaEBxCEbNg@centerbeam.proxy.rlwy.net:57066/railway',
@@ -98,12 +98,12 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# Whitenoise configuration for static files
+
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Logging Configuration - Only console logging for Railway
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
@@ -138,13 +138,13 @@ LOGGING = {
     },
 }
 
-# CSRF trusted origins for Railway
+
 CSRF_TRUSTED_ORIGINS = [
     'https://web-production-8b01c.up.railway.app',
     'https://*.railway.app',
 ]
 
-# Security settings for production
+
 if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')

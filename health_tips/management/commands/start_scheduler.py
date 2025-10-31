@@ -9,49 +9,100 @@ from django_apscheduler.models import DjangoJobExecution
 
 logger = logging.getLogger(__name__)
 
-def send_daily_health_tip():
-    """Send daily health tip to the API"""
+def send_morning_health_tip():
+   
     try:
-        # Use the same domain to avoid CORS issues
         base_url = "https://web-production-8b01c.up.railway.app"
         response = requests.post(
-            f"{base_url}/api/daily-tip",
+            f"{base_url}/api/daily-tip?time=morning",
             timeout=30
         )
         if response.status_code == 200:
-            logger.info("✅ Daily health tip sent successfully via scheduler")
-            print("✅ Daily health tip sent successfully")
+            logger.info("Morning health tip sent successfully via scheduler")
+            print("Morning health tip sent successfully")
         else:
-            logger.error(f"❌ Failed to send daily tip: {response.status_code}")
-            print(f"❌ Failed to send daily tip: {response.status_code}")
+            logger.error(f"Failed to send morning tip: {response.status_code}")
+            print(f"Failed to send morning tip: {response.status_code}")
     except Exception as e:
-        logger.error(f"❌ Error sending daily tip: {str(e)}")
-        print(f"❌ Error sending daily tip: {str(e)}")
+        logger.error(f"Error sending morning tip: {str(e)}")
+        print(f"Error sending morning tip: {str(e)}")
+
+def send_afternoon_health_tip():
+   
+    try:
+        base_url = "https://web-production-8b01c.up.railway.app"
+        response = requests.post(
+            f"{base_url}/api/daily-tip?time=afternoon",
+            timeout=30
+        )
+        if response.status_code == 200:
+            logger.info("Afternoon health tip sent successfully via scheduler")
+            print("Afternoon health tip sent successfully")
+        else:
+            logger.error(f"Failed to send afternoon tip: {response.status_code}")
+            print(f"Failed to send afternoon tip: {response.status_code}")
+    except Exception as e:
+        logger.error(f"Error sending afternoon tip: {str(e)}")
+        print(f"Error sending afternoon tip: {str(e)}")
+
+def send_evening_health_tip():
+    
+    try:
+        base_url = "https://web-production-8b01c.up.railway.app"
+        response = requests.post(
+            f"{base_url}/api/daily-tip?time=evening",
+            timeout=30
+        )
+        if response.status_code == 200:
+            logger.info("Evening health tip sent successfully via scheduler")
+            print("Evening health tip sent successfully")
+        else:
+            logger.error(f"Failed to send evening tip: {response.status_code}")
+            print(f"Failed to send evening tip: {response.status_code}")
+    except Exception as e:
+        logger.error(f"Error sending evening tip: {str(e)}")
+        print(f"Error sending evening tip: {str(e)}")
 
 @util.close_old_connections
 def delete_old_job_executions(max_age=604_800):
-    """
-    Delete old job executions to prevent the database from filling up
-    """
+    
     DjangoJobExecution.objects.delete_old_job_executions(max_age)
 
 class Command(BaseCommand):
-    help = "Starts the APScheduler for daily health tips"
+    help = "Starts the APScheduler for daily health tips at 9am, 3pm, and 8pm"
     
     def handle(self, *args, **options):
         scheduler = BackgroundScheduler()
         scheduler.add_jobstore(DjangoJobStore(), "default")
         
-        # Add daily health tip job (runs at 9:00 AM daily)
+       
         scheduler.add_job(
-            send_daily_health_tip,
-            trigger=CronTrigger(hour=9, minute=0),  # 9:00 AM UTC daily
-            id="daily_health_tip",
+            send_morning_health_tip,
+            trigger=CronTrigger(hour=9, minute=0),  
+            id="morning_health_tip",
             max_instances=1,
             replace_existing=True,
         )
         
-        # Optional: Clean up old job executions weekly
+       
+        scheduler.add_job(
+            send_afternoon_health_tip,
+            trigger=CronTrigger(hour=15, minute=0),  
+            id="afternoon_health_tip",
+            max_instances=1,
+            replace_existing=True,
+        )
+        
+        
+        scheduler.add_job(
+            send_evening_health_tip,
+            trigger=CronTrigger(hour=20, minute=0),  
+            id="evening_health_tip",
+            max_instances=1,
+            replace_existing=True,
+        )
+        
+       
         scheduler.add_job(
             delete_old_job_executions,
             trigger=CronTrigger(day_of_week="mon", hour="00", minute="00"),
@@ -60,8 +111,8 @@ class Command(BaseCommand):
             replace_existing=True,
         )
         
-        logger.info("Added daily health tip job: 9:00 AM UTC daily")
-        print("Added daily health tip job: 9:00 AM UTC daily")
+        logger.info("Added health tip jobs: 9:00 AM, 3:00 PM, and 8:00 PM UTC daily")
+        print("Added health tip jobs: 9:00 AM, 3:00 PM, and 8:00 PM UTC daily")
         
         try:
             logger.info("Starting scheduler...")

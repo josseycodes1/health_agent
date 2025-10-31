@@ -53,13 +53,10 @@ class JSONErrorResponse:
 
 @method_decorator(csrf_exempt, name='dispatch')
 class A2AHealthView(View):
-    """
-    A2A Protocol endpoint for health tips agent
-    """
     
     def post(self, request):
         try:
-            # Parse request body
+           
             try:
                 body = json.loads(request.body)
             except json.JSONDecodeError:
@@ -69,7 +66,7 @@ class A2AHealthView(View):
                     "Invalid JSON format"
                 )
             
-            # Validate JSON-RPC request
+            
             if body.get("jsonrpc") != "2.0" or "id" not in body:
                 logger.error("Invalid JSON-RPC request format")
                 return JSONErrorResponse.invalid_request(
@@ -103,34 +100,43 @@ class A2AHealthView(View):
             )
     
     def handle_message_send(self, request_id, params):
-        """Handle message/send method"""
+        
         try:
             message = params.get("message", {})
             configuration = params.get("configuration", {})
             
-            # Extract context and task IDs
+            
             context_id = message.get("taskId") or str(uuid.uuid4())
             task_id = message.get("messageId") or str(uuid.uuid4())
             
-            # Get random health tip
+           
             health_tip = get_random_tip()
             
-            # Create response with greeting + tip
+           
             user_message = ""
             for part in message.get("parts", []):
                 if part.get("kind") == "text":
                     user_message = part.get("text", "").lower()
                     break
             
-            # Customize response based on user message
-            if "hello" in user_message or "hi" in user_message:
-                response_text = f"Hello! 👋 {health_tip} Have a healthy day!"
-            elif "thank" in user_message:
-                response_text = f"You're welcome! 😊 Remember: {health_tip}"
-            else:
-                response_text = f"Here's your health tip: {health_tip} Stay healthy! 💚"
             
-            # Log the delivery
+            if "name" in user_message and ("what" in user_message or "who" in user_message):
+                response_text = "Your question is about my name, which doesn't require a health tip workflow. Do you want me to provide you with a million dollar worth of health tip that would help you keep the doctor away?"
+            
+            elif "hello" in user_message or "hi" in user_message or "hey" in user_message:
+                response_text = f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+            
+            elif "tip" in user_message or "advice" in user_message or "suggestion" in user_message:
+                response_text = f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+            
+            elif "thank" in user_message:
+                response_text = f"You're welcome! Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+            
+            else:
+                
+                response_text = f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+            
+           
             HealthTipDelivery.objects.create(
                 tip_content=health_tip,
                 context_id=context_id,
@@ -139,10 +145,10 @@ class A2AHealthView(View):
             
             logger.info(f"Health tip delivered - Context: {context_id}, Task: {task_id}")
             
-            # Build A2A response
+          
             response = self.build_success_response(
                 request_id, 
-                response_text,  # Use the customized response
+                response_text,
                 context_id, 
                 task_id
             )
@@ -154,19 +160,19 @@ class A2AHealthView(View):
             return JSONErrorResponse.internal_error(request_id, str(e))
     
     def handle_execute(self, request_id, params):
-        """Handle execute method"""
+        
         try:
             messages = params.get("messages", [])
             context_id = params.get("contextId") or str(uuid.uuid4())
             task_id = params.get("taskId") or str(uuid.uuid4())
             
-            # Get random health tip
+           
             health_tip = get_random_tip()
             
-            # Create greeting response
-            response_text = f"Hello! 🌟 Here's your daily health tip: {health_tip} Take care!"
             
-            # Log the delivery
+            response_text = f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+            
+           
             HealthTipDelivery.objects.create(
                 tip_content=health_tip,
                 context_id=context_id,
@@ -175,10 +181,10 @@ class A2AHealthView(View):
             
             logger.info(f"Health tip executed - Context: {context_id}, Task: {task_id}")
             
-            # Build A2A response
+            
             response = self.build_success_response(
                 request_id, 
-                response_text,  # Use greeting + tip
+                response_text,
                 context_id, 
                 task_id
             )
@@ -247,33 +253,43 @@ class A2AHealthView(View):
 
 @method_decorator(csrf_exempt, name='dispatch')
 class DailyHealthTipView(View):
-    """
-    Endpoint for daily automated health tips
-    """
+    
     
     def post(self, request):
         try:
-            # Get random health tip
+            
             health_tip = get_random_tip()
             task_id = str(uuid.uuid4())
             context_id = f"daily_{timezone.now().strftime('%Y%m%d')}"
             
-            # Create daily message
-            daily_message = f"🌞 Good morning! Your daily health tip: {health_tip} Have a wonderful day!"
+           
+            time_of_day = request.GET.get('time', 'general').lower()
             
-            # Log the delivery
+            
+            if time_of_day == 'morning':
+                daily_message = f"This morning, keep in mind that {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+            elif time_of_day == 'afternoon':
+                daily_message = f"This afternoon, keep in mind that {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+            elif time_of_day == 'evening':
+                daily_message = f"This night, keep in mind that {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+            else:
+                
+                daily_message = f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+            
+           
             HealthTipDelivery.objects.create(
                 tip_content=health_tip,
-                context_id=context_id,
+                context_id=f"{context_id}_{time_of_day}",
                 task_id=task_id
             )
             
-            logger.info(f"Daily health tip delivered - Context: {context_id}")
+            logger.info(f"Daily health tip delivered - Time: {time_of_day}, Context: {context_id}")
             
             return JsonResponse({
                 "status": "success",
                 "message": daily_message,
                 "tip": health_tip,
+                "time_of_day": time_of_day,
                 "task_id": task_id,
                 "context_id": context_id,
                 "timestamp": timezone.now().isoformat()
@@ -287,7 +303,6 @@ class DailyHealthTipView(View):
             }, status=500)
 
 class HealthCheckView(View):
-    """Health check endpoint"""
     
     def get(self, request):
         return JsonResponse({
