@@ -1,6 +1,10 @@
 import os
 from pathlib import Path
 import dj_database_url
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -9,20 +13,24 @@ LOG_DIR = BASE_DIR / 'logs'
 LOG_DIR.mkdir(exist_ok=True)
 
 
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-&$y+arjv_@ke&p$ue)(xe+_g@g-vh_rng)+1xx2o#x(dzm!=(c')
+SECRET_KEY = os.environ.get('SECRET_KEY')
+
 
 DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
-ALLOWED_HOSTS = [
-    'web-production-8b01c.up.railway.app',
-    'localhost',
-    '127.0.0.1',
-    '.railway.app'
-]
 
-
+ALLOWED_HOSTS = []
 if os.environ.get('ALLOWED_HOSTS'):
-    ALLOWED_HOSTS.extend(os.environ.get('ALLOWED_HOSTS').split(','))
+    ALLOWED_HOSTS = [host.strip() for host in os.environ.get('ALLOWED_HOSTS').split(',')]
+
+
+if not ALLOWED_HOSTS:
+    ALLOWED_HOSTS = [
+        'web-production-8b01c.up.railway.app',
+        'localhost',
+        '127.0.0.1',
+        '.railway.app'
+    ]
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -68,8 +76,8 @@ WSGI_APPLICATION = 'health_agent.wsgi.application'
 
 
 DATABASES = {
-    'default': dj_database_url.parse(
-        'postgresql://postgres:odWRCDFdGZazLxEBVzdKoFuaEBxCEbNg@centerbeam.proxy.rlwy.net:57066/railway',
+    'default': dj_database_url.config(
+        default=os.environ.get('DATABASE_URL'),
         conn_max_age=600,
         conn_health_checks=True,
     )
@@ -90,15 +98,15 @@ AUTH_PASSWORD_VALIDATORS = [
     },
 ]
 
-LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'UTC'
+
+LANGUAGE_CODE = os.environ.get('LANGUAGE_CODE', 'en-us')
+TIME_ZONE = os.environ.get('TIME_ZONE', 'UTC')
 USE_I18N = True
 USE_TZ = True
 
+
 STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
-
-
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
@@ -139,10 +147,16 @@ LOGGING = {
 }
 
 
-CSRF_TRUSTED_ORIGINS = [
-    'https://web-production-8b01c.up.railway.app',
-    'https://*.railway.app',
-]
+CSRF_TRUSTED_ORIGINS = []
+if os.environ.get('CSRF_TRUSTED_ORIGINS'):
+    CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in os.environ.get('CSRF_TRUSTED_ORIGINS').split(',')]
+
+
+if not CSRF_TRUSTED_ORIGINS:
+    CSRF_TRUSTED_ORIGINS = [
+        'https://web-production-8b01c.up.railway.app',
+        'https://*.railway.app',
+    ]
 
 
 if not DEBUG:

@@ -65,4 +65,5 @@ gunicorn==23.0.0
 apscheduler==3.10.4
 django-apscheduler==0.7.0
 requests==2.32.5
+python-dotenv==1.0.1
 
