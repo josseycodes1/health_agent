@@ -65,10 +65,10 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'health_agent.wsgi.application'
 
-# Database configuration - Use PostgreSQL on Railway
+# Database configuration - Use your PostgreSQL URL directly
 DATABASES = {
-    'default': dj_database_url.config(
-        default='sqlite:///db.sqlite3',
+    'default': dj_database_url.parse(
+        'postgresql://postgres:odWRCDFdGZazLxEBVzdKoFuaEBxCEbNg@centerbeam.proxy.rlwy.net:57066/railway',
         conn_max_age=600,
         conn_health_checks=True,
     )
