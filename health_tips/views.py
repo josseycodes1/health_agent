@@ -115,6 +115,21 @@ class A2AHealthView(View):
             # Get random health tip
             health_tip = get_random_tip()
             
+            # Create response with greeting + tip
+            user_message = ""
+            for part in message.get("parts", []):
+                if part.get("kind") == "text":
+                    user_message = part.get("text", "").lower()
+                    break
+            
+            # Customize response based on user message
+            if "hello" in user_message or "hi" in user_message:
+                response_text = f"Hello! 👋 {health_tip} Have a healthy day!"
+            elif "thank" in user_message:
+                response_text = f"You're welcome! 😊 Remember: {health_tip}"
+            else:
+                response_text = f"Here's your health tip: {health_tip} Stay healthy! 💚"
+            
             # Log the delivery
             HealthTipDelivery.objects.create(
                 tip_content=health_tip,
@@ -127,7 +142,7 @@ class A2AHealthView(View):
             # Build A2A response
             response = self.build_success_response(
                 request_id, 
-                health_tip, 
+                response_text,  # Use the customized response
                 context_id, 
                 task_id
             )
@@ -148,6 +163,9 @@ class A2AHealthView(View):
             # Get random health tip
             health_tip = get_random_tip()
             
+            # Create greeting response
+            response_text = f"Hello! 🌟 Here's your daily health tip: {health_tip} Take care!"
+            
             # Log the delivery
             HealthTipDelivery.objects.create(
                 tip_content=health_tip,
@@ -160,7 +178,7 @@ class A2AHealthView(View):
             # Build A2A response
             response = self.build_success_response(
                 request_id, 
-                health_tip, 
+                response_text,  # Use greeting + tip
                 context_id, 
                 task_id
             )
@@ -171,7 +189,7 @@ class A2AHealthView(View):
             logger.error(f"Error in handle_execute: {str(e)}")
             return JSONErrorResponse.internal_error(request_id, str(e))
     
-    def build_success_response(self, request_id, health_tip, context_id, task_id):
+    def build_success_response(self, request_id, response_text, context_id, task_id):
         """Build successful A2A response"""
         from datetime import datetime
         
@@ -190,7 +208,7 @@ class A2AHealthView(View):
                         "parts": [
                             {
                                 "kind": "text",
-                                "text": health_tip
+                                "text": response_text
                             }
                         ],
                         "kind": "message",
@@ -204,7 +222,7 @@ class A2AHealthView(View):
                         "parts": [
                             {
                                 "kind": "text",
-                                "text": health_tip
+                                "text": response_text
                             }
                         ]
                     }
@@ -216,7 +234,7 @@ class A2AHealthView(View):
                         "parts": [
                             {
                                 "kind": "text",
-                                "text": health_tip
+                                "text": response_text
                             }
                         ],
                         "kind": "message",
@@ -240,6 +258,9 @@ class DailyHealthTipView(View):
             task_id = str(uuid.uuid4())
             context_id = f"daily_{timezone.now().strftime('%Y%m%d')}"
             
+            # Create daily message
+            daily_message = f"🌞 Good morning! Your daily health tip: {health_tip} Have a wonderful day!"
+            
             # Log the delivery
             HealthTipDelivery.objects.create(
                 tip_content=health_tip,
@@ -251,6 +272,7 @@ class DailyHealthTipView(View):
             
             return JsonResponse({
                 "status": "success",
+                "message": daily_message,
                 "tip": health_tip,
                 "task_id": task_id,
                 "context_id": context_id,

@@ -62,5 +62,7 @@ whitenoise==6.11.0
 wrapt==1.17.3
 Django==5.0.14
 gunicorn==23.0.0
-
+apscheduler==3.10.4
+django-apscheduler==0.7.0
+requests==2.32.5
 
