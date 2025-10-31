@@ -1,21 +1,15 @@
 import logging
 import json
 import uuid
-import re
-import random
 import os
-from collections import Counter
 from django.http import JsonResponse
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.utils import timezone
-from .health import get_random_tip, get_all_tips
-from .models import HealthTipDelivery
 
 logger = logging.getLogger(__name__)
 
-# Import Gemini
 try:
     import google.generativeai as genai
     GEMINI_AVAILABLE = True
@@ -23,7 +17,7 @@ except ImportError:
     GEMINI_AVAILABLE = False
     logger.warning("Google Generative AI package not installed")
 
-class GeminiHealthAssistant:
+class GeminiHealthChat:
     def __init__(self):
         self.api_key = os.getenv('GEMINI_API_KEY')
         if self.api_key and GEMINI_AVAILABLE:
@@ -31,7 +25,8 @@ class GeminiHealthAssistant:
                 genai.configure(api_key=self.api_key)
                 self.model = genai.GenerativeModel('gemini-pro')
                 self.available = True
-                logger.info("Gemini AI initialized successfully")
+                self.conversation_history = {}
+                logger.info("Gemini Health Chat initialized successfully")
             except Exception as e:
                 logger.error(f"Gemini initialization failed: {e}")
                 self.available = False
@@ -39,40 +34,74 @@ class GeminiHealthAssistant:
             self.available = False
             logger.warning("Gemini API key not found or package not available")
     
-    def generate_health_response(self, user_message, health_tip):
-        """Use Gemini to generate natural, contextual responses with health tips"""
-        if not self.available or not user_message.strip():
-            # Fallback to simple response if Gemini not available
-            return f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, if you have severe symptoms, ensure you book an appointment with the doctor today."
+    def get_conversation_history(self, session_id):
+        """Get or create conversation history for a session"""
+        if session_id not in self.conversation_history:
+            self.conversation_history[session_id] = [
+                {
+                    "role": "user",
+                    "parts": [{
+                        "text": """You are HealthAI, a friendly and expert health assistant. Your role is to:
+
+1. Provide engaging, conversational health advice and wellness tips
+2. Be warm, empathetic, and supportive like a health coach
+3. Answer all health-related questions naturally
+4. Keep responses concise but helpful (2-4 sentences)
+5. Use emojis occasionally to be friendly 😊
+6. Ask follow-up questions to understand user needs better
+7. If non-health topics come up, gently steer back to health/wellness
+
+Remember: Be conversational like ChatGPT, not robotic. Respond naturally to whatever the user says."""
+                    }]
+                },
+                {
+                    "role": "model",
+                    "parts": [{
+                        "text": "Hello! I'm HealthAI, your friendly health assistant! 😊 I'm here to help with any health questions, wellness tips, or lifestyle advice. How can I support your health journey today?"
+                    }]
+                }
+            ]
+        return self.conversation_history[session_id]
+    
+    def chat(self, user_message, session_id="default"):
+        """Pure conversational chat with Gemini - no health tip database"""
+        if not self.available:
+            return "I'm currently unavailable, but I'd love to chat about health tips soon! Please try again in a moment. 💚"
         
         try:
-            prompt = f"""You are a friendly, engaging Health Tips Assistant. Your role is to:
-1. Provide helpful health advice and wellness tips
-2. Be conversational and natural
-3. Incorporate this health tip naturally into your response: "{health_tip}"
-4. Keep responses concise but engaging (1-2 sentences)
-5. Encourage further health-related conversation
-
-User message: {user_message}
-
-Respond naturally as a health coach would:"""
+            # Get conversation history
+            history = self.get_conversation_history(session_id)
             
-            response = self.model.generate_content(
-                prompt,
-                generation_config=genai.types.GenerationConfig(
-                    max_output_tokens=150,
-                    temperature=0.7
-                )
-            )
+            # Add user's new message to history
+            history.append({
+                "role": "user",
+                "parts": [{"text": user_message}]
+            })
             
+            # Generate response using full conversation history
+            chat_session = self.model.start_chat(history=history[:-1])  # Exclude the current user message
+            response = chat_session.send_message(user_message)
+            
+            # Add model response to history
+            history.append({
+                "role": "model", 
+                "parts": [{"text": response.text}]
+            })
+            
+            # Keep history manageable (last 10 exchanges)
+            if len(history) > 20:  # 10 user + 10 model messages
+                history = [history[0], history[1]] + history[-18:]  # Keep system prompt + recent messages
+            
+            self.conversation_history[session_id] = history
+            
+            logger.info(f"Gemini response generated for session: {session_id}")
             return response.text.strip()
             
         except Exception as e:
-            logger.error(f"Gemini response generation failed: {e}")
-            # Fallback response
-            return f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, if you have severe symptoms, ensure you book an appointment with the doctor today."
+            logger.error(f"Gemini chat failed: {str(e)}")
+            return "I'd love to help with health tips, but I'm having a moment. Could you try again? 💚"
 
-# Keep your existing JSONErrorResponse class
+# JSONErrorResponse class
 class JSONErrorResponse:
     @staticmethod
     def error(request_id, code, message, data=None):
@@ -118,7 +147,7 @@ class A2AHealthView(View):
     
     def __init__(self):
         super().__init__()
-        self.gemini_assistant = GeminiHealthAssistant()
+        self.gemini_chat = GeminiHealthChat()
     
     def post(self, request):
         try:
@@ -164,15 +193,13 @@ class A2AHealthView(View):
             )
     
     def handle_message_send(self, request_id, params):
-        """Handle message/send with Gemini generating complete responses"""
+        """Pure conversational handling - no health tip database"""
         try:
             message = params.get("message", {})
             configuration = params.get("configuration", {})
             
             context_id = message.get("taskId") or str(uuid.uuid4())
             task_id = message.get("messageId") or str(uuid.uuid4())
-            
-            health_tip = get_random_tip()
             
             # Extract user message
             user_message = ""
@@ -181,17 +208,13 @@ class A2AHealthView(View):
                     user_message = part.get("text", "").strip()
                     break
             
-            # Let Gemini generate the complete response
-            response_text = self.gemini_assistant.generate_health_response(user_message, health_tip)
+            # Use session ID for conversation continuity
+            session_id = context_id  # Use context_id as session identifier
             
-            # Log the delivery
-            HealthTipDelivery.objects.create(
-                tip_content=health_tip,
-                context_id=context_id,
-                task_id=task_id
-            )
+            # Get pure AI response
+            response_text = self.gemini_chat.chat(user_message, session_id)
             
-            logger.info(f"Gemini response generated for user message: {user_message}")
+            logger.info(f"Conversational response for: {user_message}")
             
             # Build response
             response = self.build_success_response(
@@ -208,15 +231,13 @@ class A2AHealthView(View):
             return JSONErrorResponse.internal_error(request_id, str(e))
     
     def handle_execute(self, request_id, params):
-        """Handle execute method"""
+        """Handle execute method with conversation"""
         try:
             messages = params.get("messages", [])
             context_id = params.get("contextId") or str(uuid.uuid4())
             task_id = params.get("taskId") or str(uuid.uuid4())
             
-            health_tip = get_random_tip()
-            
-            # Extract user message from messages if available
+            # Extract user message
             user_message = ""
             if messages:
                 for msg in messages:
@@ -227,20 +248,15 @@ class A2AHealthView(View):
                     if user_message:
                         break
             
+            # Use session ID for conversation continuity
+            session_id = context_id
+            
             if user_message:
-                # Use Gemini to generate response
-                response_text = self.gemini_assistant.generate_health_response(user_message, health_tip)
+                response_text = self.gemini_chat.chat(user_message, session_id)
             else:
-                # Default response
-                response_text = f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, if you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+                response_text = "Hello! I'm HealthAI, your friendly health assistant! 😊 How can I help with your health and wellness today?"
             
-            HealthTipDelivery.objects.create(
-                tip_content=health_tip,
-                context_id=context_id,
-                task_id=task_id
-            )
-            
-            logger.info(f"Health tip executed - Context: {context_id}, Task: {task_id}")
+            logger.info(f"Execute conversation - Context: {context_id}")
             
             response = self.build_success_response(
                 request_id, 
@@ -284,7 +300,7 @@ class A2AHealthView(View):
                 "artifacts": [
                     {
                         "artifactId": str(uuid.uuid4()),
-                        "name": "health_tip",
+                        "name": "health_response",
                         "parts": [
                             {
                                 "kind": "text",
@@ -311,56 +327,15 @@ class A2AHealthView(View):
             }
         }
 
-@method_decorator(csrf_exempt, name='dispatch')
-class DailyHealthTipView(View):
-    
-    def post(self, request):
-        try:
-            health_tip = get_random_tip()
-            task_id = str(uuid.uuid4())
-            context_id = f"daily_{timezone.now().strftime('%Y%m%d')}"
-            
-            time_of_day = request.GET.get('time', 'general').lower()
-            
-            if time_of_day == 'morning':
-                daily_message = f"This morning, remember to {health_tip.lower().replace('.', '')}. Don't forget, if you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
-            elif time_of_day == 'afternoon':
-                daily_message = f"This afternoon, remember to {health_tip.lower().replace('.', '')}. Don't forget, if you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
-            elif time_of_day == 'evening':
-                daily_message = f"This night, remember to {health_tip.lower().replace('.', '')}. Don't forget, if have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
-            else:
-                daily_message = f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, if you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
-            
-            HealthTipDelivery.objects.create(
-                tip_content=health_tip,
-                context_id=f"{context_id}_{time_of_day}",
-                task_id=task_id
-            )
-            
-            logger.info(f"Daily health tip delivered - Time: {time_of_day}, Context: {context_id}")
-            
-            return JsonResponse({
-                "status": "success",
-                "message": daily_message,
-                "tip": health_tip,
-                "time_of_day": time_of_day,
-                "task_id": task_id,
-                "context_id": context_id,
-                "timestamp": timezone.now().isoformat()
-            })
-            
-        except Exception as e:
-            logger.error(f"Error in daily health tip: {str(e)}")
-            return JsonResponse({
-                "status": "error",
-                "message": str(e)
-            }, status=500)
-
 class HealthCheckView(View):
+    def __init__(self):
+        super().__init__()
+        self.gemini_chat = GeminiHealthChat()
     
     def get(self, request):
         return JsonResponse({
             "status": "healthy",
-            "service": "health_tips_agent",
-            "timestamp": timezone.now().isoformat()
+            "service": "health_conversation_agent",
+            "timestamp": timezone.now().isoformat(),
+            "gemini_available": self.gemini_chat.available
         })

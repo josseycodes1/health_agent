@@ -18,6 +18,8 @@ SECRET_KEY = os.environ.get('SECRET_KEY')
 
 DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY')
+
 
 ALLOWED_HOSTS = []
 if os.environ.get('ALLOWED_HOSTS'):
