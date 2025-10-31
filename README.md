@@ -1,4 +1,5 @@
 # Project Overview of my Health Tips AI Agent
+Postman API Documentation - https://documenter.getpostman.com/view/38639286/2sB3WpPzvj 
 
 ## Project Purpose
 I built a Django-based AI agent that delivers health tips through the A2A protocol for Telex integration. This architecture delivers reliable health tip services through both user-initiated interactions and automated daily reminders.
