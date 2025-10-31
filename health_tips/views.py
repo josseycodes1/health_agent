@@ -23,7 +23,7 @@ class GeminiHealthChat:
         if self.api_key and GEMINI_AVAILABLE:
             try:
                 genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel('gemini-pro')
+                self.model = genai.GenerativeModel('gemini-1.5-flash')
                 self.available = True
                 self.conversation_history = {}
                 logger.info("Gemini Health Chat initialized successfully")
