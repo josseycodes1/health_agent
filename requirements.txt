@@ -60,3 +60,7 @@ urllib3==2.5.0
 wheel==0.45.1
 whitenoise==6.11.0
 wrapt==1.17.3
+Django==5.0.14
+gunicorn==23.0.0
+
+

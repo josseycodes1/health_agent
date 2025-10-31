@@ -3,15 +3,34 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-
+# Create logs directory if it doesn't exist
 LOG_DIR = BASE_DIR / 'logs'
 LOG_DIR.mkdir(exist_ok=True)
 
-SECRET_KEY = 'django-insecure-&$y+arjv_@ke&p$ue)(xe+_g@g-vh_rng)+1xx2o#x(dzm!=(c'  
+# Security settings for production
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-&$y+arjv_@ke&p$ue)(xe+_g@g-vh_rng)+1xx2o#x(dzm!=(c')
 
-DEBUG = True
+DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
-ALLOWED_HOSTS = ['*']
+# Railway URL and allowed hosts
+RAILWAY_STATIC_URL = os.environ.get('RAILWAY_STATIC_DOMAIN')
+ALLOWED_HOSTS = []
+
+# Add Railway domain and localhost
+if RAILWAY_STATIC_URL:
+    ALLOWED_HOSTS.append(RAILWAY_STATIC_URL)
+    
+# Always allow these
+ALLOWED_HOSTS.extend([
+    'web-production-8b01c.up.railway.app',
+    'localhost',
+    '127.0.0.1',
+    '.railway.app'
+])
+
+# For any additional domains from environment
+if os.environ.get('ALLOWED_HOSTS'):
+    ALLOWED_HOSTS.extend(os.environ.get('ALLOWED_HOSTS').split(','))
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -54,12 +73,21 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'health_agent.wsgi.application'
 
+# Database configuration for Railway
 DATABASES = {
     'default': {
         'ENGINE': 'django.db.backends.sqlite3',
         'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
+
+# Use PostgreSQL if DATABASE_URL is available (Railway provides this)
+if os.environ.get('DATABASE_URL'):
+    import dj_database_url
+    DATABASES['default'] = dj_database_url.config(
+        conn_max_age=600,
+        conn_health_checks=True,
+    )
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -81,8 +109,11 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
+
+# Whitenoise configuration for static files
+STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
@@ -126,3 +157,15 @@ LOGGING = {
         },
     },
 }
+
+# CSRF trusted origins for Railway
+CSRF_TRUSTED_ORIGINS = [
+    'https://web-production-8b01c.up.railway.app',
+    'https://*.railway.app',
+]
+
+# CORS settings (if you need API access from other domains)
+CORS_ALLOWED_ORIGINS = [
+    "https://web-production-8b01c.up.railway.app",
+    "https://*.railway.app",
+]
