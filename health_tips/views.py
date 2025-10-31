@@ -7,6 +7,8 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.utils import timezone
+from google import genai
+
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +25,7 @@ class GeminiHealthChat:
         if self.api_key and GEMINI_AVAILABLE:
             try:
                 genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel('gemini-1.5-flash')
+                self.model = genai.GenerativeModel('models/gemini-1.5-pro')
                 self.available = True
                 self.conversation_history = {}
                 logger.info("Gemini Health Chat initialized successfully")
