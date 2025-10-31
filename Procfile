@@ -1,1 +1,1 @@
-web: python manage.py migrate && gunicorn health_agent.wsgi:application --bind 0.0.0.0:$PORT
+web: python manage.py migrate --noinput && gunicorn health_agent.wsgi:application --bind 0.0.0.0:$PORT

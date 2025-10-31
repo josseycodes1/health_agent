@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -12,21 +13,12 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-&$y+arjv_@ke&p$ue)(xe
 
 DEBUG = os.environ.get('DEBUG', 'False').lower() == 'true'
 
-# Railway URL and allowed hosts
-RAILWAY_STATIC_URL = os.environ.get('RAILWAY_STATIC_DOMAIN')
-ALLOWED_HOSTS = []
-
-# Add Railway domain and localhost
-if RAILWAY_STATIC_URL:
-    ALLOWED_HOSTS.append(RAILWAY_STATIC_URL)
-    
-# Always allow these
-ALLOWED_HOSTS.extend([
+ALLOWED_HOSTS = [
     'web-production-8b01c.up.railway.app',
     'localhost',
     '127.0.0.1',
     '.railway.app'
-])
+]
 
 # For any additional domains from environment
 if os.environ.get('ALLOWED_HOSTS'):
@@ -73,21 +65,14 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'health_agent.wsgi.application'
 
-# Database configuration for Railway
+# Database configuration - Use PostgreSQL on Railway
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
-}
-
-# Use PostgreSQL if DATABASE_URL is available (Railway provides this)
-if os.environ.get('DATABASE_URL'):
-    import dj_database_url
-    DATABASES['default'] = dj_database_url.config(
+    'default': dj_database_url.config(
+        default='sqlite:///db.sqlite3',
         conn_max_age=600,
         conn_health_checks=True,
     )
+}
 
 AUTH_PASSWORD_VALIDATORS = [
     {
@@ -117,13 +102,13 @@ STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Logging Configuration
+# Logging Configuration - Only console logging for Railway
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
     'formatters': {
         'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'format': '{levelname} {asctime} {module} {message}',
             'style': '{',
         },
         'simple': {
@@ -132,26 +117,20 @@ LOGGING = {
         },
     },
     'handlers': {
-        'file': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': LOG_DIR / 'health_agent.log',
-            'formatter': 'verbose',
-        },
         'console': {
-            'level': 'DEBUG',
+            'level': 'INFO',
             'class': 'logging.StreamHandler',
             'formatter': 'simple',
         },
     },
     'loggers': {
         'django': {
-            'handlers': ['console'], 
+            'handlers': ['console'],
             'level': 'INFO',
             'propagate': True,
         },
         'health_tips': {
-            'handlers': ['console', 'file'],
+            'handlers': ['console'],
             'level': 'DEBUG',
             'propagate': False,
         },
@@ -164,8 +143,9 @@ CSRF_TRUSTED_ORIGINS = [
     'https://*.railway.app',
 ]
 
-# CORS settings (if you need API access from other domains)
-CORS_ALLOWED_ORIGINS = [
-    "https://web-production-8b01c.up.railway.app",
-    "https://*.railway.app",
-]
+# Security settings for production
+if not DEBUG:
+    SECURE_SSL_REDIRECT = True
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
