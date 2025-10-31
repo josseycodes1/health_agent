@@ -124,13 +124,13 @@ class A2AHealthView(View):
                 response_text = "Your question is about my name, which doesn't require a health tip workflow. Do you want me to provide you with a million dollar worth of health tip that would help you keep the doctor away?"
             
             elif "hello" in user_message or "hi" in user_message or "hey" in user_message:
-                response_text = f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+                response_text = f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, if you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
             
             elif "tip" in user_message or "advice" in user_message or "suggestion" in user_message:
-                response_text = f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+                response_text = f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, if you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
             
             elif "thank" in user_message:
-                response_text = f"You're welcome! Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+                response_text = f"You're welcome! Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, if you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
             
             else:
                 
@@ -170,7 +170,7 @@ class A2AHealthView(View):
             health_tip = get_random_tip()
             
             
-            response_text = f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+            response_text = f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, if you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
             
            
             HealthTipDelivery.objects.create(
@@ -267,14 +267,14 @@ class DailyHealthTipView(View):
             
             
             if time_of_day == 'morning':
-                daily_message = f"This morning, keep in mind that {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+                daily_message = f"This morning, remember to {health_tip.lower().replace('.', '')}. Don't forget, if you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
             elif time_of_day == 'afternoon':
-                daily_message = f"This afternoon, keep in mind that {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+                daily_message = f"This afternoon, remember to {health_tip.lower().replace('.', '')}. Don't forget, if you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
             elif time_of_day == 'evening':
-                daily_message = f"This night, keep in mind that {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+                daily_message = f"This night, remember to {health_tip.lower().replace('.', '')}. Don't forget, if have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
             else:
                 
-                daily_message = f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, in case you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
+                daily_message = f"Today, remember to {health_tip.lower().replace('.', '')}. Don't forget, if you have severe symptoms of discomfort that has refused to go away, ensure you book an appointment with the doctor today."
             
            
             HealthTipDelivery.objects.create(
