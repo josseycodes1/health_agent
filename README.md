@@ -1,4 +1,6 @@
 # Health AI Conversation Agent
+Deployed URL: https://web-production-8b01c.up.railway.app
+Postman API Documentation - https://documenter.getpostman.com/view/38639286/2sB3WpPzvj 
 
 ## Project Overview
 I built a Django-based AI health assistant that engages in natural conversations about health and wellness through the A2A protocol for Telex integration. This intelligent agent provides dynamic, contextual health advice using Google Gemini AI instead of static health tips.
