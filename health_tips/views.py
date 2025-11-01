@@ -36,8 +36,61 @@ class GeminiHealthChat:
             self.available = False
             logger.warning("Gemini API key not found or package not available")
     
+    def is_health_related(self, message):
+        """Check if message is health-related before processing"""
+        if not message or not message.strip():
+            return False
+            
+        message_lower = message.lower().strip()
+        
+        # Health-related keywords
+        health_keywords = [
+            'health', 'wellness', 'nutrition', 'diet', 'exercise', 'fitness',
+            'mental', 'stress', 'sleep', 'medical', 'doctor', 'hospital',
+            'pain', 'illness', 'symptom', 'treatment', 'medicine', 'vitamin',
+            'weight', 'food', 'eat', 'workout', 'yoga', 'meditation', 'therapy',
+            'healthy', 'unhealthy', 'condition', 'diagnosis', 'recovery',
+            'fitness', 'muscle', 'cardio', 'strength', 'flexibility', 'endurance',
+            'calorie', 'protein', 'carb', 'fat', 'fiber', 'mineral', 'supplement',
+            'anxiety', 'depression', 'mindfulness', 'counseling', 'psychology',
+            'insomnia', 'rest', 'energy', 'fatigue', 'hydration', 'water',
+            'blood pressure', 'cholesterol', 'diabetes', 'heart', 'lung', 'brain',
+            'physical', 'therapy', 'rehabilitation', 'prevention', 'wellbeing'
+        ]
+        
+        # Off-topic keywords to reject
+        off_topic_keywords = [
+            'dog', 'dogs', 'pet', 'pets', 'cat', 'cats', 'animal', 'animals',
+            'sport', 'sports', 'game', 'games', 'movie', 'movies', 'music',
+            'weather', 'news', 'politics', 'car', 'cars', 'computer', 'phone',
+            'tv', 'television', 'book', 'books', 'celebrity', 'celebrities',
+            'travel', 'vacation', 'holiday', 'shopping', 'buy', 'purchase',
+            'school', 'work', 'job', 'career', 'money', 'finance', 'stock',
+            'house', 'home', 'garden', 'plant', 'plants', 'cooking', 'recipe',
+            'restaurant', 'movie', 'film', 'entertainment', 'hobby', 'hobbies'
+        ]
+        
+        # Check if message contains health keywords
+        has_health_content = any(keyword in message_lower for keyword in health_keywords)
+        
+        # Check if message is clearly off-topic
+        is_off_topic = any(keyword in message_lower for keyword in off_topic_keywords)
+        
+        # Also reject very generic messages that aren't health-focused
+        generic_messages = ['how are you', 'hello', 'hi', 'hey', 'what can you do', 'whats up', "what's up"]
+        is_generic = any(msg in message_lower for msg in generic_messages)
+        
+        # Special case: if it's a greeting but mentions health, allow it
+        if is_generic and has_health_content:
+            return True
+            
+        return has_health_content and not is_off_topic
+    
+    def get_redirect_response(self):
+        """Standard response for off-topic questions"""
+        return "I specialize only in health and wellness topics. I can help with nutrition, exercise, mental health, sleep, or other health-related questions! 💪😊"
+    
     def get_conversation_history(self, session_id):
-      
         if session_id not in self.conversation_history:
             self.conversation_history[session_id] = [
                 {
@@ -45,27 +98,35 @@ class GeminiHealthChat:
                     "parts": [{
                         "text": """You are HealthAI, a STRICT health and wellness assistant. Your role is:
 
-    CRITICAL RULES:
-    1. ONLY discuss health, wellness, nutrition, exercise, mental health, sleep, and medical topics
-    2. FIRMLY but politely decline any non-health related questions
-    3. If users ask about pets, sports, weather, or other off-topic subjects, respond: "I specialize only in health and wellness topics. I can help with nutrition, exercise, mental health, sleep, or other health-related questions!"
-    4. Never acknowledge that you know about other topics
-    5. Immediately redirect back to health topics
-    6. Keep responses concise (1-2 sentences)
-    7. Be friendly but firm about your scope
-    8. Use simple emojis occasionally
+CRITICAL RULES - NEVER BREAK THESE:
+1. ONLY discuss health, wellness, nutrition, exercise, mental health, sleep, and medical topics
+2. FIRMLY but politely decline ANY non-health related questions immediately
+3. If users ask about pets, sports, weather, food, animals, or other off-topic subjects, respond EXACTLY: "I specialize only in health and wellness topics. I can help with nutrition, exercise, mental health, sleep, or other health-related questions!"
+4. NEVER provide information about dogs, pets, animals, or any non-health topics
+5. Immediately redirect back to health topics without engaging in off-topic discussions
+6. If someone asks "do you know about X" where X is not health-related, say you only know health topics
+7. Keep responses concise (1-2 sentences)
+8. Be friendly but firm about your scope
+9. Use simple emojis occasionally
 
-    HEALTH TOPICS ONLY:
-    - Nutrition and diet
-    - Exercise and fitness
-    - Mental health and stress
-    - Sleep and rest
-    - Medical conditions (general advice only)
-    - Healthy habits
-    - Wellness tips
-    - Preventive care
+HEALTH TOPICS ONLY:
+- Nutrition and diet for HUMANS
+- Exercise and fitness for HUMANS  
+- Mental health and stress
+- Sleep and rest
+- Medical conditions (general advice only)
+- Healthy habits
+- Wellness tips
+- Preventive care
 
-    Remember: You are a health specialist, not a general AI. Stay strictly in your lane."""
+OFF-TOPIC SUBJECTS TO REJECT:
+- Pets, dogs, animals
+- Sports, games, entertainment
+- Weather, news, politics
+- Food recipes (unless nutrition/health focused)
+- General chit-chat like "how are you"
+
+Remember: You are a health specialist, not a general AI. Stay strictly in your lane. If you break these rules, you could give dangerous medical advice about topics you're not qualified for."""
                     }]
                 },
                 {
@@ -78,21 +139,22 @@ class GeminiHealthChat:
         return self.conversation_history[session_id]
     
     def chat(self, user_message, session_id="default"):
- 
         if not self.available:
             return "I'm currently unavailable, but I'd love to chat about health tips soon! Please try again in a moment. 💚"
         
+        # Pre-filter non-health topics
+        if not self.is_health_related(user_message):
+            logger.info(f"Redirected off-topic question: {user_message}")
+            return self.get_redirect_response()
+        
         try:
-          
             history = self.get_conversation_history(session_id)
-            
             
             history.append({
                 "role": "user",
                 "parts": [{"text": user_message}]
             })
             
-           
             chat_session = self.model.start_chat(history=history[:-1])
             response = chat_session.send_message(
                 user_message,
@@ -102,13 +164,11 @@ class GeminiHealthChat:
                 )
             )
             
-            
             history.append({
                 "role": "model", 
                 "parts": [{"text": response.text}]
             })
             
-           
             if len(history) > 20:
                 history = [history[0], history[1]] + history[-18:]
             
@@ -119,7 +179,6 @@ class GeminiHealthChat:
             
         except Exception as e:
             logger.error(f"Gemini chat failed: {str(e)}")
-            
             return "I specialize in health and wellness topics. How can I help with your health questions today?"
 
 
@@ -214,7 +273,6 @@ class A2AHealthView(View):
             )
     
     def handle_message_send(self, request_id, params):
-        
         try:
             message = params.get("message", {})
             configuration = params.get("configuration", {})
@@ -222,21 +280,23 @@ class A2AHealthView(View):
             context_id = message.get("taskId") or str(uuid.uuid4())
             task_id = message.get("messageId") or str(uuid.uuid4())
             
-           
             user_message = ""
             for part in message.get("parts", []):
                 if part.get("kind") == "text":
                     user_message = part.get("text", "").strip()
                     break
             
-           
             session_id = context_id  
             
-            
-            response_text = self.gemini_chat.chat(user_message, session_id)
+            # Use greeting for empty messages or generic greetings
+            if not user_message:
+                response_text = "Hello! I'm HealthAI, your dedicated health and wellness assistant! 😊 I'm here to help with nutrition, exercise, mental health, sleep, and all health-related questions. How can I support your wellness journey today?"
+            elif user_message.lower() in ['hi', 'hello', 'how are you', 'hey', 'whats up', "what's up"]:
+                response_text = "Hello! I'm HealthAI, your dedicated health and wellness assistant! 😊 I'm here to help with nutrition, exercise, mental health, sleep, and all health-related questions. How can I support your wellness journey today?"
+            else:
+                response_text = self.gemini_chat.chat(user_message, session_id)
             
             logger.info(f"Conversational response for: {user_message}")
-            
             
             response = self.build_success_response(
                 request_id, 
@@ -252,12 +312,10 @@ class A2AHealthView(View):
             return JSONErrorResponse.internal_error(request_id, str(e))
     
     def handle_execute(self, request_id, params):
-        
         try:
             messages = params.get("messages", [])
             context_id = params.get("contextId") or str(uuid.uuid4())
             task_id = params.get("taskId") or str(uuid.uuid4())
-            
             
             user_message = ""
             if messages:
@@ -269,13 +327,14 @@ class A2AHealthView(View):
                     if user_message:
                         break
             
-            
             session_id = context_id
             
-            if user_message:
-                response_text = self.gemini_chat.chat(user_message, session_id)
-            else:
+            if not user_message:
                 response_text = "Hello! I'm HealthAI, your friendly health assistant! 😊 How can I help with your health and wellness today?"
+            elif user_message.lower() in ['hi', 'hello', 'how are you', 'hey', 'whats up', "what's up"]:
+                response_text = "Hello! I'm HealthAI, your friendly health assistant! 😊 How can I help with your health and wellness today?"
+            else:
+                response_text = self.gemini_chat.chat(user_message, session_id)
             
             logger.info(f"Execute conversation - Context: {context_id}")
             
@@ -293,7 +352,6 @@ class A2AHealthView(View):
             return JSONErrorResponse.internal_error(request_id, str(e))
     
     def build_success_response(self, request_id, response_text, context_id, task_id):
-        
         from datetime import datetime
         
         return {
