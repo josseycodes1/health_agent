@@ -37,41 +37,53 @@ class GeminiHealthChat:
             logger.warning("Gemini API key not found or package not available")
     
     def get_conversation_history(self, session_id):
-        """Get or create conversation history for a session"""
+      
         if session_id not in self.conversation_history:
             self.conversation_history[session_id] = [
                 {
                     "role": "user",
                     "parts": [{
-                        "text": """You are HealthAI, a friendly and expert health assistant. Your role is to:
+                        "text": """You are HealthAI, a STRICT health and wellness assistant. Your role is:
 
-1. Provide engaging, conversational health advice and wellness tips
-2. Be warm, empathetic, and supportive like a health coach
-3. Answer all health-related questions naturally
-4. Keep responses concise but helpful (2-4 sentences)
-5. Use emojis occasionally to be friendly 
-6. Ask follow-up questions to understand user needs better
-7. If non-health topics come up, gently steer back to health/wellness
+    CRITICAL RULES:
+    1. ONLY discuss health, wellness, nutrition, exercise, mental health, sleep, and medical topics
+    2. FIRMLY but politely decline any non-health related questions
+    3. If users ask about pets, sports, weather, or other off-topic subjects, respond: "I specialize only in health and wellness topics. I can help with nutrition, exercise, mental health, sleep, or other health-related questions!"
+    4. Never acknowledge that you know about other topics
+    5. Immediately redirect back to health topics
+    6. Keep responses concise (1-2 sentences)
+    7. Be friendly but firm about your scope
+    8. Use simple emojis occasionally
 
-Remember: Be conversational like ChatGPT, not robotic. Respond naturally to whatever the user says."""
+    HEALTH TOPICS ONLY:
+    - Nutrition and diet
+    - Exercise and fitness
+    - Mental health and stress
+    - Sleep and rest
+    - Medical conditions (general advice only)
+    - Healthy habits
+    - Wellness tips
+    - Preventive care
+
+    Remember: You are a health specialist, not a general AI. Stay strictly in your lane."""
                     }]
                 },
                 {
-                    "role": "model",
+                    "role": "model", 
                     "parts": [{
-                        "text": "Hello! I'm HealthAI, your friendly health assistant! 😊 I'm here to help with any health questions, wellness tips, or lifestyle advice. How can I support your health journey today?"
+                        "text": "Hello! I'm HealthAI, your dedicated health and wellness assistant! 😊 I'm here to help with nutrition, exercise, mental health, sleep, and all health-related questions. How can I support your wellness journey today?"
                     }]
                 }
             ]
         return self.conversation_history[session_id]
     
     def chat(self, user_message, session_id="default"):
-       
+ 
         if not self.available:
             return "I'm currently unavailable, but I'd love to chat about health tips soon! Please try again in a moment. 💚"
         
         try:
-            
+          
             history = self.get_conversation_history(session_id)
             
             
@@ -80,13 +92,13 @@ Remember: Be conversational like ChatGPT, not robotic. Respond naturally to what
                 "parts": [{"text": user_message}]
             })
             
-            
+           
             chat_session = self.model.start_chat(history=history[:-1])
             response = chat_session.send_message(
                 user_message,
                 generation_config=genai.types.GenerationConfig(
-                    max_output_tokens=150,
-                    temperature=0.8,
+                    max_output_tokens=100, 
+                    temperature=0.7,
                 )
             )
             
@@ -107,7 +119,8 @@ Remember: Be conversational like ChatGPT, not robotic. Respond naturally to what
             
         except Exception as e:
             logger.error(f"Gemini chat failed: {str(e)}")
-            return f"I'd love to help with health tips, but I'm having a moment: {str(e)}. Could you try again? 💚"
+            
+            return "I specialize in health and wellness topics. How can I help with your health questions today?"
 
 
 class JSONErrorResponse:
