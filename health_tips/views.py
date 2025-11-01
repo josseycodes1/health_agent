@@ -25,7 +25,7 @@ class GeminiHealthChat:
         if self.api_key and GEMINI_AVAILABLE:
             try:
                 genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel('models/gemini-1.5-pro')
+                self.model = genai.GenerativeModel('gemini-2.0-flash')
                 self.available = True
                 self.conversation_history = {}
                 logger.info("Gemini Health Chat initialized successfully")
@@ -66,42 +66,48 @@ Remember: Be conversational like ChatGPT, not robotic. Respond naturally to what
         return self.conversation_history[session_id]
     
     def chat(self, user_message, session_id="default"):
-        """Pure conversational chat with Gemini - no health tip database"""
-        if not self.available:
-            return "I'm currently unavailable, but I'd love to chat about health tips soon! Please try again in a moment. 💚"
+    """Pure conversational chat with Gemini - no health tip database"""
+    if not self.available:
+        return "I'm currently unavailable, but I'd love to chat about health tips soon! Please try again in a moment. 💚"
+    
+    try:
+        # Get conversation history
+        history = self.get_conversation_history(session_id)
         
-        try:
-            # Get conversation history
-            history = self.get_conversation_history(session_id)
-            
-            # Add user's new message to history
-            history.append({
-                "role": "user",
-                "parts": [{"text": user_message}]
-            })
-            
-            # Generate response using full conversation history
-            chat_session = self.model.start_chat(history=history[:-1])  # Exclude the current user message
-            response = chat_session.send_message(user_message)
-            
-            # Add model response to history
-            history.append({
-                "role": "model", 
-                "parts": [{"text": response.text}]
-            })
-            
-            # Keep history manageable (last 10 exchanges)
-            if len(history) > 20:  # 10 user + 10 model messages
-                history = [history[0], history[1]] + history[-18:]  # Keep system prompt + recent messages
-            
-            self.conversation_history[session_id] = history
-            
-            logger.info(f"Gemini response generated for session: {session_id}")
-            return response.text.strip()
-            
-        except Exception as e:
-            logger.error(f"Gemini chat failed: {str(e)}")
-            return "I'd love to help with health tips, but I'm having a moment. Could you try again? 💚"
+        # Add user's new message to history
+        history.append({
+            "role": "user",
+            "parts": [{"text": user_message}]
+        })
+        
+        # Generate response using full conversation history
+        chat_session = self.model.start_chat(history=history[:-1])
+        response = chat_session.send_message(
+            user_message,
+            generation_config=genai.types.GenerationConfig(
+                max_output_tokens=150,
+                temperature=0.8,
+            )
+        )
+        
+        # Add model response to history
+        history.append({
+            "role": "model", 
+            "parts": [{"text": response.text}]
+        })
+        
+        # Keep history manageable (last 10 exchanges)
+        if len(history) > 20:
+            history = [history[0], history[1]] + history[-18:]
+        
+        self.conversation_history[session_id] = history
+        
+        logger.info(f"Gemini response generated for session: {session_id}")
+        return response.text.strip()
+        
+    except Exception as e:
+        logger.error(f"Gemini chat failed: {str(e)}")
+        return f"I'd love to help with health tips, but I'm having a moment: {str(e)}. Could you try again? 💚"
 
 # JSONErrorResponse class
 class JSONErrorResponse:
