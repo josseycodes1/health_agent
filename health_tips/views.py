@@ -49,7 +49,7 @@ class GeminiHealthChat:
 2. Be warm, empathetic, and supportive like a health coach
 3. Answer all health-related questions naturally
 4. Keep responses concise but helpful (2-4 sentences)
-5. Use emojis occasionally to be friendly 😊
+5. Use emojis occasionally to be friendly 
 6. Ask follow-up questions to understand user needs better
 7. If non-health topics come up, gently steer back to health/wellness
 
@@ -66,21 +66,21 @@ Remember: Be conversational like ChatGPT, not robotic. Respond naturally to what
         return self.conversation_history[session_id]
     
     def chat(self, user_message, session_id="default"):
-        """Pure conversational chat with Gemini - no health tip database"""
+       
         if not self.available:
             return "I'm currently unavailable, but I'd love to chat about health tips soon! Please try again in a moment. 💚"
         
         try:
-            # Get conversation history
+            
             history = self.get_conversation_history(session_id)
             
-            # Add user's new message to history
+            
             history.append({
                 "role": "user",
                 "parts": [{"text": user_message}]
             })
             
-            # Generate response using full conversation history
+            
             chat_session = self.model.start_chat(history=history[:-1])
             response = chat_session.send_message(
                 user_message,
@@ -90,13 +90,13 @@ Remember: Be conversational like ChatGPT, not robotic. Respond naturally to what
                 )
             )
             
-            # Add model response to history
+            
             history.append({
                 "role": "model", 
                 "parts": [{"text": response.text}]
             })
             
-            # Keep history manageable (last 10 exchanges)
+           
             if len(history) > 20:
                 history = [history[0], history[1]] + history[-18:]
             
@@ -109,7 +109,7 @@ Remember: Be conversational like ChatGPT, not robotic. Respond naturally to what
             logger.error(f"Gemini chat failed: {str(e)}")
             return f"I'd love to help with health tips, but I'm having a moment: {str(e)}. Could you try again? 💚"
 
-# JSONErrorResponse class
+
 class JSONErrorResponse:
     @staticmethod
     def error(request_id, code, message, data=None):
@@ -201,7 +201,7 @@ class A2AHealthView(View):
             )
     
     def handle_message_send(self, request_id, params):
-        """Pure conversational handling - no health tip database"""
+        
         try:
             message = params.get("message", {})
             configuration = params.get("configuration", {})
@@ -209,22 +209,22 @@ class A2AHealthView(View):
             context_id = message.get("taskId") or str(uuid.uuid4())
             task_id = message.get("messageId") or str(uuid.uuid4())
             
-            # Extract user message
+           
             user_message = ""
             for part in message.get("parts", []):
                 if part.get("kind") == "text":
                     user_message = part.get("text", "").strip()
                     break
             
-            # Use session ID for conversation continuity
-            session_id = context_id  # Use context_id as session identifier
+           
+            session_id = context_id  
             
-            # Get pure AI response
+            
             response_text = self.gemini_chat.chat(user_message, session_id)
             
             logger.info(f"Conversational response for: {user_message}")
             
-            # Build response
+            
             response = self.build_success_response(
                 request_id, 
                 response_text,
@@ -239,13 +239,13 @@ class A2AHealthView(View):
             return JSONErrorResponse.internal_error(request_id, str(e))
     
     def handle_execute(self, request_id, params):
-        """Handle execute method with conversation"""
+        
         try:
             messages = params.get("messages", [])
             context_id = params.get("contextId") or str(uuid.uuid4())
             task_id = params.get("taskId") or str(uuid.uuid4())
             
-            # Extract user message
+            
             user_message = ""
             if messages:
                 for msg in messages:
@@ -256,7 +256,7 @@ class A2AHealthView(View):
                     if user_message:
                         break
             
-            # Use session ID for conversation continuity
+            
             session_id = context_id
             
             if user_message:
@@ -280,7 +280,7 @@ class A2AHealthView(View):
             return JSONErrorResponse.internal_error(request_id, str(e))
     
     def build_success_response(self, request_id, response_text, context_id, task_id):
-        """Build successful A2A response"""
+        
         from datetime import datetime
         
         return {
