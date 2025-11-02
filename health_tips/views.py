@@ -1,4 +1,3 @@
-# views.py
 import logging
 import json
 import uuid
@@ -10,23 +9,23 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.utils import timezone
 
-# Prefer the new google-genai client if available
+
 try:
     from google import genai as genai_client_pkg
     GENAI_CLIENT_AVAILABLE = True
 except Exception:
     GENAI_CLIENT_AVAILABLE = False
 
-# For backwards compatibility if older package used
+
 try:
-    import google.generativeai as genai_old  # older name, kept for safe detection
+    import google.generativeai as genai_old  
     OLD_GENAI_AVAILABLE = True
 except Exception:
     OLD_GENAI_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
-# ---- Configuration ----
+
 MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME", "models/gemini-2.5-flash")
 SYSTEM_PROMPT_TEXT = """You are Health Buddy, a strictly focused health and wellness virtual assistant.
 CRITICAL RULES:
@@ -37,8 +36,7 @@ CRITICAL RULES:
 If a user asks something not health-related, respond exactly with: "I specialize only in health and wellness topics. I can help with nutrition, exercise, mental health, sleep, or other health-related questions!" and optionally offer a short health-related pivot question.
 """
 
-# ---- Regex compiled sets (fast, reliable) ----
-# Off-topic tokens (word-boundary matched)
+
 OFF_TOPIC_WORDS = [
     'dog','dogs','cat','cats','pet','pets','animal','animals',
     'movie','movies','music','sport','sports','game','games',
@@ -49,7 +47,7 @@ OFF_TOPIC_WORDS = [
 ]
 OFF_TOPIC_REGEX = re.compile(r'\b(' + r'|'.join(re.escape(w) for w in OFF_TOPIC_WORDS) + r')\b', re.IGNORECASE)
 
-# Health keywords (if present -> allow)
+
 HEALTH_KEYWORDS = [
     'health','wellness','nutrition','diet','exercise','fitness','mental','stress',
     'sleep','medical','doctor','hospital','pain','illness','symptom','treatment',
@@ -60,14 +58,12 @@ HEALTH_KEYWORDS = [
 ]
 HEALTH_REGEX = re.compile(r'\b(' + r'|'.join(re.escape(w) for w in HEALTH_KEYWORDS) + r')\b', re.IGNORECASE)
 
-# A helper to scan text for off-topic tokens (used for pre and post checks)
+
 def contains_off_topic(text: str) -> bool:
     return bool(OFF_TOPIC_REGEX.search(text or ""))
 
 def contains_health_keyword(text: str) -> bool:
     return bool(HEALTH_REGEX.search(text or ""))
-
-# ---- Helper classes / functions ----
 
 class GeminiHealthChat:
     def __init__(self):
@@ -118,19 +114,11 @@ class GeminiHealthChat:
             del self.conversation_history[session_id]
 
     def safe_post_filter(self, assistant_text: str) -> bool:
-        """Return True if assistant_text is acceptable; False if it contains off-topic material."""
         if not assistant_text:
             return False
-        # If any off-topic token appears in assistant text, reject it
         return not contains_off_topic(assistant_text)
 
     def is_health_related(self, message: str) -> bool:
-        """Decide if the incoming user message is clearly health-related.
-        Rules:
-          - If it contains off-topic token => NOT health (immediate reject)
-          - Else if it contains health keyword => YES
-          - Else ambiguous => NO (ask clarify)
-        """
         if not message or not message.strip():
             return False
 
@@ -138,40 +126,40 @@ class GeminiHealthChat:
             return False
         if contains_health_keyword(message):
             return True
-        # ambiguous -> treat as not health-related
+       
         return False
 
     def chat(self, user_message: str, session_id: str = "default"):
         if not self.available:
             return "I'm currently unavailable — please try again later. 💚"
 
-        # PRE-CHECK: immediate off-topic rejection
+       
         if not self.is_health_related(user_message):
             logger.info("Pre-check rejected or ambiguous: %s", user_message)
-            # If user message is short/generic ask to clarify; otherwise refuse
+            
             if len(user_message.split()) <= 4:
                 return self.get_clarifying_prompt()
             return self.get_refusal_reply()
 
-        # Compose history (system seed + conversation) for model
+        
         history = self.get_conversation_history(session_id).copy()
         history.append({"role": "user", "content": user_message})
         if len(history) > 12:
             history = history[:2] + history[-10:]
 
-        # Call model (modern client preferred)
+       
         try:
             if GENAI_CLIENT_AVAILABLE and isinstance(self.client, genai_client_pkg.Client):
                 response = self.client.models.generate_content(
                     model=MODEL_NAME,
                     messages=history,
-                    temperature=0.2,            # low temperature to reduce creative off-topic replies
+                    temperature=0.2,            
                     max_output_tokens=250
                 )
-                # Extract text safely
+                
                 text = None
                 try:
-                    # try structured output extraction
+                   
                     if hasattr(response, "output"):
                         outputs = response.output
                         if outputs and isinstance(outputs, list):
@@ -190,19 +178,19 @@ class GeminiHealthChat:
                 if not text:
                     text = getattr(response, "text", None) or str(response)
 
-                # POST-CHECK: ensure the assistant's reply doesn't contain off-topic tokens
+               
                 if not self.safe_post_filter(text):
                     logger.warning("Post-filter removed an off-topic assistant reply. User message: %s", user_message)
-                    # Optionally reset history to avoid repeated drift
+                    
                     self.reset_history(session_id)
                     return self.get_refusal_reply()
 
-                # store reply in history
+                
                 self.conversation_history[session_id] = history + [{"role": "assistant", "content": text}]
                 return text.strip()
 
             elif OLD_GENAI_AVAILABLE and self.client:
-                # legacy flow (best-effort)
+               
                 try:
                     model = self.client.GenerativeModel(MODEL_NAME)
                     chat_session = model.start_chat(history=[
@@ -225,10 +213,10 @@ class GeminiHealthChat:
                 return "I’m unable to access the AI service right now."
         except Exception as e:
             logger.exception("Gemini chat failed")
-            # Be conservative on any exception: respond with scope refusal/pivot
+           
             return "I specialize in health and wellness topics. How can I help with your health questions today?"
 
-# ---------------- JSON-RPC helper ----------------
+
 class JSONErrorResponse:
     @staticmethod
     def error(request_id, code, message, data=None):
@@ -269,7 +257,7 @@ class JSONErrorResponse:
             {"details": details}
         )
 
-# ---------------- Views ----------------
+
 @method_decorator(csrf_exempt, name='dispatch')
 class A2AHealthView(View):
     def __init__(self):
