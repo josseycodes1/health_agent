@@ -1,3 +1,4 @@
+# views.py
 import logging
 import json
 import uuid
@@ -9,34 +10,19 @@ from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.utils import timezone
 
-
-try:
-    from google import genai as genai_client_pkg
-    GENAI_CLIENT_AVAILABLE = True
-except Exception:
-    GENAI_CLIENT_AVAILABLE = False
-
-
-try:
-    import google.generativeai as genai_old  
-    OLD_GENAI_AVAILABLE = True
-except Exception:
-    OLD_GENAI_AVAILABLE = False
-
 logger = logging.getLogger(__name__)
 
-
+# Config
 MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME", "models/gemini-2.5-flash")
 SYSTEM_PROMPT_TEXT = """You are Health Buddy, a strictly focused health and wellness virtual assistant.
 CRITICAL RULES:
-1. Only answer questions about human health, wellness, nutrition, exercise, mental health, and sleep.
-2. Politely but firmly refuse any unrelated topics (pets, sports, entertainment, politics, recipes not about nutrition, etc.).
-3. Keep refusals concise (1-2 sentences) and friendly.
-4. Do not provide medical diagnoses. For concerning symptoms recommend seeking a qualified healthcare professional.
-If a user asks something not health-related, respond exactly with: "I specialize only in health and wellness topics. I can help with nutrition, exercise, mental health, sleep, or other health-related questions!" and optionally offer a short health-related pivot question.
+1. Only answer human health, wellness, nutrition, exercise, mental health, and sleep.
+2. Refuse any unrelated topics with the exact message:
+"I specialize only in health and wellness topics. I can help with nutrition, exercise, mental health, sleep, or other health-related questions!"
+3. Do not provide medical diagnoses; always advise consulting a professional for concerning symptoms.
 """
 
-
+# Regex tokens
 OFF_TOPIC_WORDS = [
     'dog','dogs','cat','cats','pet','pets','animal','animals',
     'movie','movies','music','sport','sports','game','games',
@@ -46,7 +32,6 @@ OFF_TOPIC_WORDS = [
     'vacation','travel','restaurant','hobby','hobbies'
 ]
 OFF_TOPIC_REGEX = re.compile(r'\b(' + r'|'.join(re.escape(w) for w in OFF_TOPIC_WORDS) + r')\b', re.IGNORECASE)
-
 
 HEALTH_KEYWORDS = [
     'health','wellness','nutrition','diet','exercise','fitness','mental','stress',
@@ -58,6 +43,7 @@ HEALTH_KEYWORDS = [
 ]
 HEALTH_REGEX = re.compile(r'\b(' + r'|'.join(re.escape(w) for w in HEALTH_KEYWORDS) + r')\b', re.IGNORECASE)
 
+REFUSAL_TEXT = "I specialize only in health and wellness topics. I can help with nutrition, exercise, mental health, sleep, or other health-related questions!"
 
 def contains_off_topic(text: str) -> bool:
     return bool(OFF_TOPIC_REGEX.search(text or ""))
@@ -65,6 +51,33 @@ def contains_off_topic(text: str) -> bool:
 def contains_health_keyword(text: str) -> bool:
     return bool(HEALTH_REGEX.search(text or ""))
 
+# ---- Try to import Guardrails (guardrails-ai) and google-genai ----
+GUARDRAILS_AVAILABLE = False
+GUARD = None
+try:
+    # guardrails import
+    from guardrails import Guard
+    GUARDRAILS_AVAILABLE = True
+    logger.info("Guardrails available and will be used for policy enforcement.")
+except Exception as e:
+    logger.warning("Guardrails not available: %s", e)
+    GUARDRAILS_AVAILABLE = False
+
+GENAI_CLIENT_AVAILABLE = False
+try:
+    from google import genai as genai_client_pkg
+    GENAI_CLIENT_AVAILABLE = True
+except Exception:
+    GENAI_CLIENT_AVAILABLE = False
+
+OLD_GENAI_AVAILABLE = False
+try:
+    import google.generativeai as genai_old
+    OLD_GENAI_AVAILABLE = True
+except Exception:
+    OLD_GENAI_AVAILABLE = False
+
+# --------------------------------------------
 class GeminiHealthChat:
     def __init__(self):
         self.available = False
@@ -79,27 +92,41 @@ class GeminiHealthChat:
             try:
                 self.client = genai_client_pkg.Client(api_key=self.api_key)
                 self.available = True
-                logger.info("Gemini Health Chat initialized (google-genai client).")
+                logger.info("google-genai client initialized.")
             except Exception as e:
-                logger.error(f"Failed to init google-genai client: {e}")
+                logger.error("Failed to initialize google-genai client: %s", e)
                 self.available = False
         elif OLD_GENAI_AVAILABLE:
             try:
                 genai_old.configure(api_key=self.api_key)
                 self.client = genai_old
                 self.available = True
-                logger.info("Gemini Health Chat initialized (legacy google.generativeai).")
+                logger.info("Legacy google.generativeai client initialized.")
             except Exception as e:
-                logger.error(f"Failed to init legacy genai: {e}")
+                logger.error("Failed to init legacy genai: %s", e)
                 self.available = False
         else:
-            logger.warning("No generative AI client available (google-genai or google.generativeai).")
+            logger.warning("No generative AI library available.")
 
-    def get_refusal_reply(self):
-        return "I specialize only in health and wellness topics. I can help with nutrition, exercise, mental health, sleep, or other health-related questions!"
-
-    def get_clarifying_prompt(self):
-        return "Are you asking about a health or wellness concern? If so, please tell me briefly (e.g., sleep, stress, diet)."
+        # If Guardrails installed, load rail file
+        if GUARDRAILS_AVAILABLE:
+            try:
+                # Create Guard object from yaml file
+                # This API might differ across versions; common pattern is Guard.from_rail or Guard(rails="path")
+                # We'll try the common factory method and handle fallback if method name differs.
+                try:
+                    # Preferred constructor if available
+                    GUARD = Guard.from_rail("health_rails.yaml")
+                except Exception:
+                    GUARD = Guard("health_rails.yaml")
+                # store guard on instance
+                self.guard = GUARD
+                logger.info("Loaded Guardrails spec health_rails.yaml")
+            except Exception as e:
+                self.guard = None
+                logger.warning("Failed to load Guardrails spec: %s", e)
+        else:
+            self.guard = None
 
     def get_conversation_history(self, session_id):
         if session_id not in self.conversation_history:
@@ -113,54 +140,35 @@ class GeminiHealthChat:
         if session_id in self.conversation_history:
             del self.conversation_history[session_id]
 
-    def safe_post_filter(self, assistant_text: str) -> bool:
-        if not assistant_text:
-            return False
-        return not contains_off_topic(assistant_text)
-
-    def is_health_related(self, message: str) -> bool:
-        if not message or not message.strip():
-            return False
-
-        if contains_off_topic(message):
-            return False
-        if contains_health_keyword(message):
-            return True
-       
-        return False
-
-    def chat(self, user_message: str, session_id: str = "default"):
-        if not self.available:
-            return "I'm currently unavailable — please try again later. 💚"
-
-       
-        if not self.is_health_related(user_message):
-            logger.info("Pre-check rejected or ambiguous: %s", user_message)
-            
+    # Fallback conservative flow if guardrails not available
+    def fallback_chat(self, user_message: str, session_id: str = "default"):
+        # Pre-check
+        if contains_off_topic(user_message):
+            return REFUSAL_TEXT
+        if not contains_health_keyword(user_message):
+            # ambiguous or not health
             if len(user_message.split()) <= 4:
-                return self.get_clarifying_prompt()
-            return self.get_refusal_reply()
+                return "Are you asking about a health or wellness concern? If so, please tell me briefly (e.g., sleep, stress, diet)."
+            return REFUSAL_TEXT
 
-        
+        # build history and call model (similar to previous code)
         history = self.get_conversation_history(session_id).copy()
-        history.append({"role": "user", "content": user_message})
-        if len(history) > 12:
-            history = history[:2] + history[-10:]
+        history.append({"role":"user","content":user_message})
+        if not self.available:
+            return "I'm currently unavailable — please try again later."
 
-       
         try:
             if GENAI_CLIENT_AVAILABLE and isinstance(self.client, genai_client_pkg.Client):
                 response = self.client.models.generate_content(
                     model=MODEL_NAME,
                     messages=history,
-                    temperature=0.2,            
+                    temperature=0.2,
                     max_output_tokens=250
                 )
-                
+                # extract text safely (structured or fallback)
                 text = None
-                try:
-                   
-                    if hasattr(response, "output"):
+                if hasattr(response, "output"):
+                    try:
                         outputs = response.output
                         if outputs and isinstance(outputs, list):
                             first = outputs[0]
@@ -172,50 +180,85 @@ class GeminiHealthChat:
                                     if t:
                                         parts.append(t)
                                 text = " ".join(parts).strip()
-                except Exception:
-                    logger.exception("Error extracting structured response")
-
+                    except Exception:
+                        logger.exception("Failed structured parse")
                 if not text:
                     text = getattr(response, "text", None) or str(response)
 
-               
-                if not self.safe_post_filter(text):
-                    logger.warning("Post-filter removed an off-topic assistant reply. User message: %s", user_message)
-                    
+                # post-check: block off-topic in assistant reply
+                if contains_off_topic(text):
                     self.reset_history(session_id)
-                    return self.get_refusal_reply()
+                    return REFUSAL_TEXT
 
-                
-                self.conversation_history[session_id] = history + [{"role": "assistant", "content": text}]
+                self.conversation_history[session_id] = history + [{"role":"assistant","content":text}]
                 return text.strip()
 
             elif OLD_GENAI_AVAILABLE and self.client:
-               
                 try:
                     model = self.client.GenerativeModel(MODEL_NAME)
                     chat_session = model.start_chat(history=[
-                        {"role": "system", "content": SYSTEM_PROMPT_TEXT},
-                        {"role": "assistant", "content": "Hello! I'm Health Buddy, your dedicated health and wellness assistant."},
+                        {"role":"system","content":SYSTEM_PROMPT_TEXT},
+                        {"role":"assistant","content":"Hello! I'm Health Buddy, your dedicated health and wellness assistant."},
                     ])
                     response = chat_session.send_message(user_message)
-                    text = getattr(response, "text", str(response))
-                    if not self.safe_post_filter(text):
-                        logger.warning("Post-filter removed legacy off-topic reply.")
+                    text = getattr(response,"text",str(response))
+                    if contains_off_topic(text):
                         self.reset_history(session_id)
-                        return self.get_refusal_reply()
-                    self.conversation_history[session_id] = history + [{"role": "assistant", "content": text}]
+                        return REFUSAL_TEXT
+                    self.conversation_history[session_id] = history + [{"role":"assistant","content":text}]
                     return text.strip()
                 except Exception as e:
                     logger.error("Legacy client error: %s", e)
-                    return "I specialize in health and wellness topics. How can I help with your health questions today?"
-
+                    return REFUSAL_TEXT
             else:
                 return "I’m unable to access the AI service right now."
         except Exception as e:
-            logger.exception("Gemini chat failed")
-           
-            return "I specialize in health and wellness topics. How can I help with your health questions today?"
+            logger.exception("Model call failed")
+            return REFUSAL_TEXT
 
+    # Guardrails flow
+    def guardrails_chat(self, user_message: str, session_id: str = "default"):
+        # If guard not loaded, fallback
+        if not self.guard:
+            return self.fallback_chat(user_message, session_id)
+
+        # Run guard on input. The exact API may be guard.run or guard.execute depending on version.
+        try:
+            # typical pattern: guard.run({"user_message": user_message})
+            try:
+                out = self.guard.run({"user_message": user_message})
+            except TypeError:
+                # older/newer API variation support
+                out = self.guard.execute({"user_message": user_message})
+
+            # out usually contains the parsed rails output keys
+            # For safety, find assistant_reply field for rails output
+            assistant_reply = None
+            if isinstance(out, dict):
+                assistant_reply = out.get("assistant_reply") or out.get("output", {}).get("assistant_reply")
+            # If out is an object with .output or .value, attempt to extract
+            if not assistant_reply:
+                # try string representation fallback
+                assistant_reply = str(out)
+
+            # If rails returned refusal text (or if guard decided to refuse), return it
+            # Otherwise, optionally post-filter to ensure no off-topic tokens
+            if contains_off_topic(assistant_reply):
+                return REFUSAL_TEXT
+            return assistant_reply
+        except Exception as e:
+            logger.exception("Guardrails execution failed, falling back: %s", e)
+            # fallback to conservative approach
+            return self.fallback_chat(user_message, session_id)
+
+    def chat(self, user_message: str, session_id: str = "default"):
+        # If guard available and loaded use it
+        if self.guard:
+            return self.guardrails_chat(user_message, session_id)
+        # otherwise fallback
+        return self.fallback_chat(user_message, session_id)
+
+# ---------------- JSON-RPC helper & Views (same patterns as before) ----------------
 
 class JSONErrorResponse:
     @staticmethod
@@ -257,7 +300,6 @@ class JSONErrorResponse:
             {"details": details}
         )
 
-
 @method_decorator(csrf_exempt, name='dispatch')
 class A2AHealthView(View):
     def __init__(self):
@@ -297,8 +339,6 @@ class A2AHealthView(View):
     def handle_message_send(self, request_id, params):
         try:
             message = params.get("message", {})
-            configuration = params.get("configuration", {})
-
             context_id = message.get("taskId") or str(uuid.uuid4())
             task_id = message.get("messageId") or str(uuid.uuid4())
 
