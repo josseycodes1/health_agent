@@ -143,35 +143,37 @@ class GeminiHealthChat:
 
  
     def fallback_chat(self, user_message: str, session_id: str = "default"):
-        # Only block clearly off-topic messages
-        if contains_off_topic(user_message):
-            return REFUSAL_TEXT
+        logger.info(f"Processing message: '{user_message}'")
         
-        # For very short ambiguous messages, ask for clarification
-        if len(user_message.strip().split()) <= 2:
-            user_lower = user_message.lower().strip()
-            # Allow common greetings
-            if user_lower in ['hi', 'hello', 'hey', 'hola', 'hi there']:
-                pass  # Let Gemini handle greetings
-            else:
-                return "Are you asking about a health or wellness concern? If so, please tell me briefly (e.g., sleep, stress, diet, pain)."
+        # Debug: Check off-topic detection
+        is_off_topic = contains_off_topic(user_message)
+        logger.info(f"Off-topic check: {is_off_topic}")
+        
+        # Only block clearly off-topic messages
+        if is_off_topic:
+            logger.info("Blocking as off-topic")
+            return REFUSAL_TEXT
         
         # Build history and let Gemini handle the conversation
         history = self.get_conversation_history(session_id).copy()
         history.append({"role":"user","content":user_message})
         
+        logger.info(f"History length: {len(history)}")
+        
         if not self.available:
+            logger.warning("Gemini not available")
             return "I'm currently unavailable — please try again later."
 
         try:
             if GENAI_CLIENT_AVAILABLE and isinstance(self.client, genai_client_pkg.Client):
+                logger.info("Using new genai client")
                 response = self.client.models.generate_content(
                     model=MODEL_NAME,
                     messages=history,
                     temperature=0.2,
                     max_output_tokens=250
                 )
-               
+            
                 text = None
                 if hasattr(response, "output"):
                     try:
@@ -191,8 +193,11 @@ class GeminiHealthChat:
                 if not text:
                     text = getattr(response, "text", None) or str(response)
 
+                logger.info(f"Gemini raw response: '{text}'")
+                
                 # Only block if Gemini goes off-topic in response
                 if contains_off_topic(text):
+                    logger.info("Blocking Gemini response as off-topic")
                     self.reset_history(session_id)
                     return REFUSAL_TEXT
 
@@ -200,6 +205,7 @@ class GeminiHealthChat:
                 return text.strip()
 
             elif OLD_GENAI_AVAILABLE and self.client:
+                logger.info("Using legacy genai client")
                 try:
                     model = self.client.GenerativeModel(MODEL_NAME)
                     chat_session = model.start_chat(history=[
@@ -208,6 +214,8 @@ class GeminiHealthChat:
                     ])
                     response = chat_session.send_message(user_message)
                     text = getattr(response,"text",str(response))
+                    logger.info(f"Legacy Gemini response: '{text}'")
+                    
                     if contains_off_topic(text):
                         self.reset_history(session_id)
                         return REFUSAL_TEXT
@@ -217,6 +225,7 @@ class GeminiHealthChat:
                     logger.error("Legacy client error: %s", e)
                     return REFUSAL_TEXT
             else:
+                logger.warning("No genai client available")
                 return "I'm unable to access the AI service right now."
         except Exception as e:
             logger.exception("Model call failed")
@@ -523,9 +532,18 @@ class HealthCheckView(View):
         self.gemini_chat = GeminiHealthChat()
 
     def get(self, request):
+        # Test if Gemini can actually respond
+        test_response = "Not tested"
+        if self.gemini_chat.available:
+            try:
+                test_response = self.gemini_chat.chat("test health question")
+            except Exception as e:
+                test_response = f"Error: {str(e)}"
+        
         return JsonResponse({
             "status": "healthy",
-            "service": "health_conversation_agent",
+            "service": "health_conversation_agent", 
             "timestamp": timezone.now().isoformat(),
-            "gemini_available": self.gemini_chat.available
+            "gemini_available": self.gemini_chat.available,
+            "test_response": test_response
         })
