@@ -60,7 +60,7 @@ except ImportError as e:
 
 OLD_GENAI_AVAILABLE = False
 
-# --------------------------------------------
+
 class GeminiHealthChat:
     def __init__(self):
         self.available = False
@@ -257,7 +257,7 @@ class A2AHealthView(View):
         error_message_id = str(uuid.uuid4())
         artifact_id = str(uuid.uuid4())
         
-        # Fixed timestamp format to match expected format
+       
         timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         
         return JsonResponse({
@@ -276,8 +276,8 @@ class A2AHealthView(View):
                             {
                                 "kind": "text",
                                 "text": message,
-                                "data": None,  # Added missing field
-                                "file_url": None  # Added missing field
+                                "data": None, 
+                                "file_url": None  
                             }
                         ],
                         "messageId": error_message_id,
@@ -293,8 +293,8 @@ class A2AHealthView(View):
                             {
                                 "kind": "text", 
                                 "text": message,
-                                "data": None,  # Added missing field
-                                "file_url": None  # Added missing field
+                                "data": None, 
+                                "file_url": None  
                             }
                         ]
                     }
@@ -335,7 +335,7 @@ class A2AHealthView(View):
             return JSONErrorResponse.internal_error(request_id, str(e))
 
     def handle_help(self, request_id, params):
-        """Handle help method - returns information about available methods"""
+        
         from datetime import datetime
         task_id = params.get("taskId") or str(uuid.uuid4())
         context_id = params.get("contextId") or str(uuid.uuid4())
@@ -411,7 +411,7 @@ class A2AHealthView(View):
         message_id = str(uuid.uuid4())
         artifact_id = str(uuid.uuid4())
         
-        # Fixed timestamp format
+        
         timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         
         return {
@@ -430,8 +430,8 @@ class A2AHealthView(View):
                             {
                                 "kind": "text",
                                 "text": response_text,
-                                "data": None,  # Added missing field
-                                "file_url": None  # Added missing field
+                                "data": None,  
+                                "file_url": None  
                             }
                         ],
                         "messageId": message_id,
@@ -447,8 +447,8 @@ class A2AHealthView(View):
                             {
                                 "kind": "text",
                                 "text": response_text,
-                                "data": None,  # Added missing field
-                                "file_url": None  # Added missing field
+                                "data": None,  
+                                "file_url": None  
                             }
                         ]
                     }
@@ -461,8 +461,8 @@ class A2AHealthView(View):
                             {
                                 "kind": "text",
                                 "text": response_text,
-                                "data": None,  # Added missing field
-                                "file_url": None  # Added missing field
+                                "data": None,  
+                                "file_url": None  
                             }
                         ],
                         "messageId": message_id,
