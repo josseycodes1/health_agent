@@ -1,4 +1,3 @@
-# views.py
 import logging
 import json
 import uuid
@@ -12,7 +11,6 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-# Config
 MODEL_NAME = "gemini-2.0-flash"
 SYSTEM_PROMPT_TEXT = """You are Health Buddy, a strictly focused health and wellness virtual assistant.
 CRITICAL RULES:
@@ -22,7 +20,6 @@ CRITICAL RULES:
 3. Do not provide medical diagnoses; always advise consulting a professional for concerning symptoms.
 """
 
-# Regex tokens
 OFF_TOPIC_WORDS = [
     'movie','movies','music','sport','sports','game','games','gaming',
     'stock','stocks','crypto','bitcoin','ethereum','politics','political',
@@ -52,7 +49,6 @@ def contains_off_topic(text: str) -> bool:
 def contains_health_keyword(text: str) -> bool:
     return bool(HEALTH_REGEX.search(text or ""))
 
-# ---- Try to import google-genai (new library) ----
 GENAI_CLIENT_AVAILABLE = False
 try:
     from google import genai
@@ -62,7 +58,6 @@ except ImportError as e:
     logger.warning(f"New google-genai not available: {e}")
     GENAI_CLIENT_AVAILABLE = False
 
-# Disable old library
 OLD_GENAI_AVAILABLE = False
 
 # --------------------------------------------
@@ -83,9 +78,9 @@ class GeminiHealthChat:
             try:
                 self.client = genai.Client(api_key=self.api_key)
                 self.available = True
-                logger.info("✅ Google GenAI client initialized successfully")
+                logger.info("Google GenAI client initialized successfully")
             except Exception as e:
-                logger.error(f"❌ Failed to initialize Google GenAI client: {e}")
+                logger.error(f"Failed to initialize Google GenAI client: {e}")
                 self.available = False
         else:
             logger.warning("No generative AI library available.")
@@ -102,16 +97,13 @@ class GeminiHealthChat:
         if session_id in self.conversation_history:
             del self.conversation_history[session_id]
 
-    # Fallback conservative flow if guardrails not available
     def fallback_chat(self, user_message: str, session_id: str = "default"):
-        # Only block clearly off-topic messages
         user_lower = user_message.lower()
         clearly_off_topic = any(word in user_lower for word in ['movie', 'sport', 'game', 'music', 'stock', 'crypto', 'weather'])
         
         if clearly_off_topic:
             return REFUSAL_TEXT
         
-        # SIMPLE GEMINI 2.0 FLASH CALL
         try:
             if GENAI_CLIENT_AVAILABLE and self.client:
                 logger.info(f"Calling Gemini 2.0 Flash with: '{user_message}'")
@@ -126,7 +118,6 @@ class GeminiHealthChat:
                     }
                 )
                 
-                # Extract text - new library format
                 text = ""
                 if hasattr(response, 'text'):
                     text = response.text
@@ -138,7 +129,6 @@ class GeminiHealthChat:
                 text = text.strip()
                 logger.info(f"Gemini response: '{text}'")
                 
-                # Update conversation history
                 history = self.get_conversation_history(session_id)
                 history.append({"role": "user", "content": user_message})
                 history.append({"role": "assistant", "content": text})
@@ -152,11 +142,9 @@ class GeminiHealthChat:
                 
         except Exception as e:
             logger.error(f"Gemini API call failed: {str(e)}")
-            # Return conversational fallback instead of refusal
             return self.get_conversational_fallback(user_message)
 
     def get_conversational_fallback(self, user_message: str) -> str:
-        """Provide conversational fallback when Gemini fails"""
         user_lower = user_message.lower()
         
         if any(word in user_lower for word in ['migraine', 'headache', 'head', 'pain']):
@@ -177,16 +165,11 @@ class GeminiHealthChat:
         else:
             return "Hello! I'm Health Buddy, your wellness assistant. I'd love to help with health topics like nutrition, exercise, sleep, stress management, or general wellbeing. What would you like to discuss?"
 
-    # Guardrails flow (simplified)
     def guardrails_chat(self, user_message: str, session_id: str = "default"):
-        # If guard not loaded, fallback
         return self.fallback_chat(user_message, session_id)
 
     def chat(self, user_message: str, session_id: str = "default"):
-        # Use fallback chat (guardrails disabled for now)
         return self.fallback_chat(user_message, session_id)
-
-# ---------------- JSON-RPC helper & Views ----------------
 
 class JSONErrorResponse:
     @staticmethod
@@ -242,16 +225,14 @@ class A2AHealthView(View):
                 logger.error("Invalid JSON in request body")
                 return self.build_method_error_response(None, "Invalid JSON format")
 
-            # Handle empty object case
             if not body:
-                return self.build_method_error_response(None, "Unknown method. Use 'message/send' or 'execute'.")
+                return self.build_method_error_response(None, "Unknown method. Use 'message/send' or 'help'.")
 
             request_id = body.get("id", "")
             method = body.get("method")
             
-            # Check for required JSON-RPC fields but be more permissive
             if not method:
-                return self.build_method_error_response(request_id, "Unknown method. Use 'message/send' or 'execute'.")
+                return self.build_method_error_response(request_id, "Unknown method. Use 'message/send' or 'help'.")
 
             params = body.get("params", {})
 
@@ -259,23 +240,25 @@ class A2AHealthView(View):
 
             if method == "message/send":
                 return self.handle_message_send(request_id, params)
-            elif method == "execute":
-                return self.handle_execute(request_id, params)
+            elif method == "help":
+                return self.handle_help(request_id, params)
             else:
                 logger.error(f"Method not found: {method}")
-                return self.build_method_error_response(request_id, f"Unknown method. Use 'message/send' or 'execute'.")
+                return self.build_method_error_response(request_id, f"Unknown method. Use 'message/send' or 'help'.")
 
         except Exception as e:
             logger.exception("Unexpected error in A2A endpoint")
             return self.build_method_error_response(body.get("id") if 'body' in locals() else None, "Internal server error")
 
     def build_method_error_response(self, request_id, message):
-        """Build error response matching the expected format"""
         from datetime import datetime
         error_task_id = str(uuid.uuid4())
         error_context_id = str(uuid.uuid4())
         error_message_id = str(uuid.uuid4())
         artifact_id = str(uuid.uuid4())
+        
+        # Fixed timestamp format to match expected format
+        timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
         
         return JsonResponse({
             "jsonrpc": "2.0",
@@ -285,14 +268,16 @@ class A2AHealthView(View):
                 "contextId": error_context_id,
                 "status": {
                     "state": "failed",
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": timestamp,
                     "message": {
                         "kind": "message",
                         "role": "agent", 
                         "parts": [
                             {
                                 "kind": "text",
-                                "text": message
+                                "text": message,
+                                "data": None,  # Added missing field
+                                "file_url": None  # Added missing field
                             }
                         ],
                         "messageId": error_message_id,
@@ -307,7 +292,9 @@ class A2AHealthView(View):
                         "parts": [
                             {
                                 "kind": "text", 
-                                "text": message
+                                "text": message,
+                                "data": None,  # Added missing field
+                                "file_url": None  # Added missing field
                             }
                         ]
                     }
@@ -347,46 +334,19 @@ class A2AHealthView(View):
             logger.exception("Error in handle_message_send")
             return JSONErrorResponse.internal_error(request_id, str(e))
 
-    def handle_execute(self, request_id, params):
-        try:
-            messages = params.get("messages", [])
-            context_id = params.get("contextId") or str(uuid.uuid4())
-            task_id = params.get("taskId") or str(uuid.uuid4())
-
-            user_message = ""
-            if messages:
-                for msg in messages:
-                    for part in msg.get("parts", []):
-                        if part.get("kind") == "text":
-                            user_message = part.get("text", "").strip()
-                            break
-                    if user_message:
-                        break
-
-            session_id = context_id
-
-            if not user_message:
-                response_text = "Hello! I'm Health Buddy, your friendly health assistant! 😊 How can I help with your health and wellness today?"
-            elif user_message.lower() in ['hi', 'hello', 'how are you', 'hey', 'whats up', "what's up"]:
-                response_text = "Hello! I'm Health Buddy, your friendly health assistant! 😊 How can I help with your health and wellness today?"
-            else:
-                response_text = self.gemini_chat.chat(user_message, session_id)
-
-            logger.info(f"Execute conversation - Context: {context_id}")
-
-            response = self.build_success_response(request_id, response_text, context_id, task_id)
-            return JsonResponse(response)
-
-        except Exception as e:
-            logger.exception("Error in handle_execute")
-            return JSONErrorResponse.internal_error(request_id, str(e))
-
-    def build_success_response(self, request_id, response_text, context_id, task_id):
+    def handle_help(self, request_id, params):
+        """Handle help method - returns information about available methods"""
         from datetime import datetime
+        task_id = params.get("taskId") or str(uuid.uuid4())
+        context_id = params.get("contextId") or str(uuid.uuid4())
         message_id = str(uuid.uuid4())
         artifact_id = str(uuid.uuid4())
         
-        return {
+        timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        
+        help_text = "Available methods: 'message/send' for sending messages, 'help' for this information."
+        
+        return JsonResponse({
             "jsonrpc": "2.0",
             "id": request_id,
             "result": {
@@ -394,14 +354,16 @@ class A2AHealthView(View):
                 "contextId": context_id,
                 "status": {
                     "state": "completed",
-                    "timestamp": datetime.utcnow().isoformat() + "Z",
+                    "timestamp": timestamp,
                     "message": {
                         "kind": "message",
                         "role": "agent",
                         "parts": [
                             {
                                 "kind": "text",
-                                "text": response_text
+                                "text": help_text,
+                                "data": None,
+                                "file_url": None
                             }
                         ],
                         "messageId": message_id,
@@ -416,7 +378,9 @@ class A2AHealthView(View):
                         "parts": [
                             {
                                 "kind": "text",
-                                "text": response_text
+                                "text": help_text,
+                                "data": None,
+                                "file_url": None
                             }
                         ]
                     }
@@ -428,7 +392,77 @@ class A2AHealthView(View):
                         "parts": [
                             {
                                 "kind": "text",
-                                "text": response_text
+                                "text": help_text,
+                                "data": None,
+                                "file_url": None
+                            }
+                        ],
+                        "messageId": message_id,
+                        "taskId": task_id,
+                        "metadata": None
+                    }
+                ],
+                "kind": "task"
+            }
+        })
+
+    def build_success_response(self, request_id, response_text, context_id, task_id):
+        from datetime import datetime
+        message_id = str(uuid.uuid4())
+        artifact_id = str(uuid.uuid4())
+        
+        # Fixed timestamp format
+        timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
+        
+        return {
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": {
+                "id": task_id,
+                "contextId": context_id,
+                "status": {
+                    "state": "completed",
+                    "timestamp": timestamp,
+                    "message": {
+                        "kind": "message",
+                        "role": "agent",
+                        "parts": [
+                            {
+                                "kind": "text",
+                                "text": response_text,
+                                "data": None,  # Added missing field
+                                "file_url": None  # Added missing field
+                            }
+                        ],
+                        "messageId": message_id,
+                        "taskId": task_id,
+                        "metadata": None
+                    }
+                },
+                "artifacts": [
+                    {
+                        "artifactId": artifact_id,
+                        "name": "assistantResponse",
+                        "parts": [
+                            {
+                                "kind": "text",
+                                "text": response_text,
+                                "data": None,  # Added missing field
+                                "file_url": None  # Added missing field
+                            }
+                        ]
+                    }
+                ],
+                "history": [
+                    {
+                        "kind": "message",
+                        "role": "agent",
+                        "parts": [
+                            {
+                                "kind": "text",
+                                "text": response_text,
+                                "data": None,  # Added missing field
+                                "file_url": None  # Added missing field
                             }
                         ],
                         "messageId": message_id,
@@ -446,7 +480,6 @@ class HealthCheckView(View):
         self.gemini_chat = GeminiHealthChat()
 
     def get(self, request):
-        # Test Gemini availability
         test_response = "Not tested"
         if self.gemini_chat.available:
             try:
