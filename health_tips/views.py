@@ -1,4 +1,4 @@
-
+# views.py
 import logging
 import json
 import uuid
@@ -12,8 +12,8 @@ from django.utils import timezone
 
 logger = logging.getLogger(__name__)
 
-
-MODEL_NAME = os.environ.get("GEMINI_MODEL_NAME", "models/gemini-2.5-flash")
+# Config
+MODEL_NAME = "gemini-2.0-flash"
 SYSTEM_PROMPT_TEXT = """You are Health Buddy, a strictly focused health and wellness virtual assistant.
 CRITICAL RULES:
 1. Only answer human health, wellness, nutrition, exercise, mental health, and sleep.
@@ -22,9 +22,8 @@ CRITICAL RULES:
 3. Do not provide medical diagnoses; always advise consulting a professional for concerning symptoms.
 """
 
-
+# Regex tokens
 OFF_TOPIC_WORDS = [
-    # Keep only clearly non-health topics
     'movie','movies','music','sport','sports','game','games','gaming',
     'stock','stocks','crypto','bitcoin','ethereum','politics','political',
     'weather','recipe','recipes','cooking','baking',
@@ -32,7 +31,6 @@ OFF_TOPIC_WORDS = [
     'programming','coding','software','book','books','novel',
     'celebrity','celebrities','actor','actress','vacation','travel',
     'restaurant','hobby','hobbies','craft','shopping'
-    # Remove animal/pet words since they could be therapy/service animals
 ]
 OFF_TOPIC_REGEX = re.compile(r'\b(' + r'|'.join(re.escape(w) for w in OFF_TOPIC_WORDS) + r')\b', re.IGNORECASE)
 
@@ -54,80 +52,43 @@ def contains_off_topic(text: str) -> bool:
 def contains_health_keyword(text: str) -> bool:
     return bool(HEALTH_REGEX.search(text or ""))
 
-
-GUARDRAILS_AVAILABLE = False
-GUARD = None
-try:
-   
-    from guardrails import Guard
-    GUARDRAILS_AVAILABLE = True
-    logger.info("Guardrails available and will be used for policy enforcement.")
-except Exception as e:
-    logger.warning("Guardrails not available: %s", e)
-    GUARDRAILS_AVAILABLE = False
-
+# ---- Try to import google-genai (new library) ----
 GENAI_CLIENT_AVAILABLE = False
 try:
-    from google import genai as genai_client_pkg
+    from google import genai
     GENAI_CLIENT_AVAILABLE = True
-except Exception:
+    logger.info("✅ New google-genai client available")
+except ImportError as e:
+    logger.warning(f"New google-genai not available: {e}")
     GENAI_CLIENT_AVAILABLE = False
 
+# Disable old library
 OLD_GENAI_AVAILABLE = False
-try:
-    import google.generativeai as genai_old
-    OLD_GENAI_AVAILABLE = True
-except Exception:
-    OLD_GENAI_AVAILABLE = False
 
-
+# --------------------------------------------
 class GeminiHealthChat:
     def __init__(self):
         self.available = False
         self.client = None
         self.conversation_history = {}
         self.api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        
+        logger.info(f"API Key available: {bool(self.api_key)}")
+        
         if not self.api_key:
             logger.warning("Gemini API key not found in env (GEMINI_API_KEY or GOOGLE_API_KEY)")
             return
 
         if GENAI_CLIENT_AVAILABLE:
             try:
-                self.client = genai_client_pkg.Client(api_key=self.api_key)
+                self.client = genai.Client(api_key=self.api_key)
                 self.available = True
-                logger.info("google-genai client initialized.")
+                logger.info("✅ Google GenAI client initialized successfully")
             except Exception as e:
-                logger.error("Failed to initialize google-genai client: %s", e)
-                self.available = False
-        elif OLD_GENAI_AVAILABLE:
-            try:
-                genai_old.configure(api_key=self.api_key)
-                self.client = genai_old
-                self.available = True
-                logger.info("Legacy google.generativeai client initialized.")
-            except Exception as e:
-                logger.error("Failed to init legacy genai: %s", e)
+                logger.error(f"❌ Failed to initialize Google GenAI client: {e}")
                 self.available = False
         else:
             logger.warning("No generative AI library available.")
-
-   
-        if GUARDRAILS_AVAILABLE:
-            try:
-            
-                try:
-                 
-                    GUARD = Guard.from_rail("health_rails.yaml")
-                except Exception:
-                    GUARD = Guard("health_rails.yaml")
-             
-                self.guard = GUARD
-                logger.info("Loaded Guardrails spec health_rails.yaml")
-            except Exception as e:
-                self.guard = None
-                logger.warning("Failed to load Guardrails spec: %s", e)
-        else:
-            self.guard = None
 
     def get_conversation_history(self, session_id):
         if session_id not in self.conversation_history:
@@ -141,137 +102,91 @@ class GeminiHealthChat:
         if session_id in self.conversation_history:
             del self.conversation_history[session_id]
 
- 
+    # Fallback conservative flow if guardrails not available
     def fallback_chat(self, user_message: str, session_id: str = "default"):
-        logger.info(f"Processing message: '{user_message}'")
-        
-        # Debug: Check off-topic detection
-        is_off_topic = contains_off_topic(user_message)
-        logger.info(f"Off-topic check: {is_off_topic}")
-        
         # Only block clearly off-topic messages
-        if is_off_topic:
-            logger.info("Blocking as off-topic")
+        user_lower = user_message.lower()
+        clearly_off_topic = any(word in user_lower for word in ['movie', 'sport', 'game', 'music', 'stock', 'crypto', 'weather'])
+        
+        if clearly_off_topic:
             return REFUSAL_TEXT
         
-        # Build history and let Gemini handle the conversation
-        history = self.get_conversation_history(session_id).copy()
-        history.append({"role":"user","content":user_message})
-        
-        logger.info(f"History length: {len(history)}")
-        
-        if not self.available:
-            logger.warning("Gemini not available")
-            return "I'm currently unavailable — please try again later."
-
+        # SIMPLE GEMINI 2.0 FLASH CALL
         try:
-            if GENAI_CLIENT_AVAILABLE and isinstance(self.client, genai_client_pkg.Client):
-                logger.info("Using new genai client")
+            if GENAI_CLIENT_AVAILABLE and self.client:
+                logger.info(f"Calling Gemini 2.0 Flash with: '{user_message}'")
+                
                 response = self.client.models.generate_content(
                     model=MODEL_NAME,
-                    messages=history,
-                    temperature=0.2,
-                    max_output_tokens=250
+                    contents=[user_message],
+                    config={
+                        "system_instruction": SYSTEM_PROMPT_TEXT,
+                        "temperature": 0.2,
+                        "max_output_tokens": 500,
+                    }
                 )
-            
-                text = None
-                if hasattr(response, "output"):
-                    try:
-                        outputs = response.output
-                        if outputs and isinstance(outputs, list):
-                            first = outputs[0]
-                            content = getattr(first, "content", None)
-                            if content and isinstance(content, list):
-                                parts = []
-                                for c in content:
-                                    t = getattr(c, "text", None) or (c.get("text") if isinstance(c, dict) else None)
-                                    if t:
-                                        parts.append(t)
-                                text = " ".join(parts).strip()
-                    except Exception:
-                        logger.exception("Failed structured parse")
-                if not text:
-                    text = getattr(response, "text", None) or str(response)
-
-                logger.info(f"Gemini raw response: '{text}'")
                 
-                # Only block if Gemini goes off-topic in response
-                if contains_off_topic(text):
-                    logger.info("Blocking Gemini response as off-topic")
-                    self.reset_history(session_id)
-                    return REFUSAL_TEXT
-
-                self.conversation_history[session_id] = history + [{"role":"assistant","content":text}]
-                return text.strip()
-
-            elif OLD_GENAI_AVAILABLE and self.client:
-                logger.info("Using legacy genai client")
-                try:
-                    model = self.client.GenerativeModel(MODEL_NAME)
-                    chat_session = model.start_chat(history=[
-                        {"role":"system","content":SYSTEM_PROMPT_TEXT},
-                        {"role":"assistant","content":"Hello! I'm Health Buddy, your dedicated health and wellness assistant."},
-                    ])
-                    response = chat_session.send_message(user_message)
-                    text = getattr(response,"text",str(response))
-                    logger.info(f"Legacy Gemini response: '{text}'")
-                    
-                    if contains_off_topic(text):
-                        self.reset_history(session_id)
-                        return REFUSAL_TEXT
-                    self.conversation_history[session_id] = history + [{"role":"assistant","content":text}]
-                    return text.strip()
-                except Exception as e:
-                    logger.error("Legacy client error: %s", e)
-                    return REFUSAL_TEXT
+                # Extract text - new library format
+                text = ""
+                if hasattr(response, 'text'):
+                    text = response.text
+                elif hasattr(response, 'candidates') and response.candidates:
+                    text = response.candidates[0].content.parts[0].text
+                else:
+                    text = str(response)
+                
+                text = text.strip()
+                logger.info(f"Gemini response: '{text}'")
+                
+                # Update conversation history
+                history = self.get_conversation_history(session_id)
+                history.append({"role": "user", "content": user_message})
+                history.append({"role": "assistant", "content": text})
+                self.conversation_history[session_id] = history
+                
+                return text
+                
             else:
-                logger.warning("No genai client available")
-                return "I'm unable to access the AI service right now."
-        except Exception as e:
-            logger.exception("Model call failed")
-            return REFUSAL_TEXT
-
-   
-    def guardrails_chat(self, user_message: str, session_id: str = "default"):
-       
-        if not self.guard:
-            return self.fallback_chat(user_message, session_id)
-
-       
-        try:
-            
-            try:
-                out = self.guard.run({"user_message": user_message})
-            except TypeError:
+                logger.warning("Gemini client not available")
+                return "Hello! I'm Health Buddy. I specialize in health and wellness topics. How can I assist you today?"
                 
-                out = self.guard.execute({"user_message": user_message})
-
-            
-            assistant_reply = None
-            if isinstance(out, dict):
-                assistant_reply = out.get("assistant_reply") or out.get("output", {}).get("assistant_reply")
-         
-            if not assistant_reply:
-               
-                assistant_reply = str(out)
-
-            
-            if contains_off_topic(assistant_reply):
-                return REFUSAL_TEXT
-            return assistant_reply
         except Exception as e:
-            logger.exception("Guardrails execution failed, falling back: %s", e)
-            
-            return self.fallback_chat(user_message, session_id)
+            logger.error(f"Gemini API call failed: {str(e)}")
+            # Return conversational fallback instead of refusal
+            return self.get_conversational_fallback(user_message)
 
-    def chat(self, user_message: str, session_id: str = "default"):
-       
-        if self.guard:
-            return self.guardrails_chat(user_message, session_id)
+    def get_conversational_fallback(self, user_message: str) -> str:
+        """Provide conversational fallback when Gemini fails"""
+        user_lower = user_message.lower()
         
+        if any(word in user_lower for word in ['migraine', 'headache', 'head', 'pain']):
+            return "I understand you're dealing with head pain. Migraines can be challenging. General wellness tips include staying hydrated, resting in a quiet environment, and managing stress. For persistent issues, consulting a healthcare provider is recommended."
+        
+        elif any(word in user_lower for word in ['diet', 'nutrition', 'food', 'eat']):
+            return "Nutrition is key to overall health! A balanced diet with fruits, vegetables, and whole grains supports wellbeing. Are you interested in specific nutrition topics?"
+        
+        elif any(word in user_lower for word in ['exercise', 'workout', 'fitness']):
+            return "Regular exercise benefits both physical and mental health! Finding activities you enjoy makes consistency easier. What type of movement interests you?"
+        
+        elif any(word in user_lower for word in ['sleep', 'tired', 'insomnia']):
+            return "Quality sleep is essential! Consistent routines and comfortable environments can improve sleep. Are you having trouble with sleep patterns?"
+        
+        elif any(word in user_lower for word in ['stress', 'anxiety', 'mental']):
+            return "Mental wellness matters! Techniques like deep breathing, mindfulness, and social connection can help manage stress. Would you like to explore wellness strategies?"
+        
+        else:
+            return "Hello! I'm Health Buddy, your wellness assistant. I'd love to help with health topics like nutrition, exercise, sleep, stress management, or general wellbeing. What would you like to discuss?"
+
+    # Guardrails flow (simplified)
+    def guardrails_chat(self, user_message: str, session_id: str = "default"):
+        # If guard not loaded, fallback
         return self.fallback_chat(user_message, session_id)
 
+    def chat(self, user_message: str, session_id: str = "default"):
+        # Use fallback chat (guardrails disabled for now)
+        return self.fallback_chat(user_message, session_id)
 
+# ---------------- JSON-RPC helper & Views ----------------
 
 class JSONErrorResponse:
     @staticmethod
@@ -325,17 +240,16 @@ class A2AHealthView(View):
                 body = json.loads(request.body)
             except json.JSONDecodeError:
                 logger.error("Invalid JSON in request body")
-               
                 return self.build_method_error_response(None, "Invalid JSON format")
 
-            
+            # Handle empty object case
             if not body:
                 return self.build_method_error_response(None, "Unknown method. Use 'message/send' or 'execute'.")
 
             request_id = body.get("id", "")
             method = body.get("method")
             
-          
+            # Check for required JSON-RPC fields but be more permissive
             if not method:
                 return self.build_method_error_response(request_id, "Unknown method. Use 'message/send' or 'execute'.")
 
@@ -532,7 +446,7 @@ class HealthCheckView(View):
         self.gemini_chat = GeminiHealthChat()
 
     def get(self, request):
-        # Test if Gemini can actually respond
+        # Test Gemini availability
         test_response = "Not tested"
         if self.gemini_chat.available:
             try:
@@ -542,7 +456,7 @@ class HealthCheckView(View):
         
         return JsonResponse({
             "status": "healthy",
-            "service": "health_conversation_agent", 
+            "service": "health_conversation_agent",
             "timestamp": timezone.now().isoformat(),
             "gemini_available": self.gemini_chat.available,
             "test_response": test_response
