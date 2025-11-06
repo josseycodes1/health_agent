@@ -304,19 +304,18 @@ class A2AHealthView(View):
             }
         })
 
-    def handle_message_send(self, request_id, params):
+    def handle_message_send(self, request_id, params):  
         try:
             message = params.get("message", {})
             context_id = message.get("taskId") or str(uuid.uuid4())
             task_id = message.get("messageId") or str(uuid.uuid4())
 
             user_message = ""
-            for part in message.get("parts", []):
-                if part.get("kind") == "text":
-                    user_message = part.get("text", "").strip()
-                    break
+            text_parts = [part.get("text", "").strip() for part in message.get("parts", []) if part.get("kind") == "text"]
+            if text_parts:
+                user_message = text_parts[-1]     
 
-            session_id = context_id
+            session_id = context_id 
 
             if not user_message:
                 response_text = "Hello! I'm Health Buddy, your dedicated health and wellness assistant! 😊 I'm here to help with nutrition, exercise, mental health, sleep, and all health-related questions. How can I support your wellness journey today?"
