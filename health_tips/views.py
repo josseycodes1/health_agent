@@ -312,44 +312,29 @@ class A2AHealthView(View):
 
             user_message = ""
             
-           
+            # SIMPLE APPROACH: Collect ALL text from ALL parts and data
+            all_texts = []
+            
+            # Check main parts
             for part in message.get("parts", []):
                 if part.get("kind") == "text":
-                    text = part.get("text", "").strip()
-                    
-                    if text and len(text) < 100 and not text.startswith('Here are'):
-                        user_message = text
-                        break
-            
-           
-            if not user_message:
-                for part in message.get("parts", []):
-                    if part.get("kind") == "data":
-                        data_items = part.get("data", [])
-                        for data_item in data_items:
-                            if data_item.get("kind") == "text":
-                                text = data_item.get("text", "").strip()
-                                
-                                if text and len(text) < 100 and not text.startswith('<p>'):
-                                    user_message = text
-                                    break
-                        if user_message:
-                            break
-            
-            
-            if not user_message:
-                all_texts = []
-                for part in message.get("parts", []):
-                    if part.get("kind") == "text":
-                        all_texts.append(part.get("text", "").strip())
-                    elif part.get("kind") == "data":
-                        for data_item in part.get("data", []):
-                            if data_item.get("kind") == "text":
-                                all_texts.append(data_item.get("text", "").strip())
+                    all_texts.append(part.get("text", "").strip())
                 
-                if all_texts:
-                    user_message = all_texts[-1]
-    
+                # Check data parts
+                elif part.get("kind") == "data":
+                    for data_item in part.get("data", []):
+                        if data_item.get("kind") == "text":
+                            all_texts.append(data_item.get("text", "").strip())
+            
+            # ALWAYS take the VERY LAST text item
+            if all_texts:
+                user_message = all_texts[-1]
+                logger.info(f"Extracted user message: '{user_message}' from {len(all_texts)} total texts")
+            
+            # If still no message found, use fallback
+            if not user_message:
+                logger.warning("No user message found in request")
+                user_message = ""
 
             session_id = context_id 
 
