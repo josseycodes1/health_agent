@@ -129,7 +129,7 @@ class GeminiHealthChat:
                 
         except Exception as e:
             logger.error(f"Gemini API call failed: {str(e)}")
-            # Simple fallback responses
+            
             user_lower = user_message.lower()
             if any(word in user_lower for word in ['headache', 'migraine', 'head pain']):
                 return "I understand you're dealing with head pain. General wellness tips include staying hydrated, resting in a quiet environment, and managing stress. For persistent issues, consulting a healthcare provider is recommended."
@@ -162,7 +162,7 @@ class A2AHealthView(View):
                 logger.error("Invalid JSON in request body")
                 return self.build_error_response(None, -32700, "Parse error: Invalid JSON")
 
-            # Validate JSON-RPC 2.0 basics
+            
             if body.get("jsonrpc") != "2.0" or "id" not in body:
                 logger.error("Invalid JSON-RPC request: missing jsonrpc or id")
                 return self.build_error_response(
@@ -223,17 +223,17 @@ class A2AHealthView(View):
             
             logger.info(f"Found {len(parts)} parts in message")
             
-            # Log all parts for debugging
+            
             for i, part in enumerate(parts):
                 part_kind = part.get('kind', 'unknown')
                 part_text = part.get('text', '')[:100] if part.get('text') else 'NO_TEXT'
                 logger.info(f"Part {i}: kind={part_kind}, text_preview='{part_text}'")
                 
-                # Also log data parts if they exist
+                
                 if part.get('data'):
                     logger.info(f"Part {i} data: {part.get('data')}")
 
-            # STRATEGY: Look for user messages in DATA parts (conversation history)
+            
             user_messages = []
             
             for part in parts:
@@ -247,24 +247,23 @@ class A2AHealthView(View):
                             item.get("text")):
                             
                             text = item.get("text", "").strip()
-                            # Look for user messages (not bot responses)
+                           
                             if text and not self.is_bot_response(text):
                                 user_messages.append(text)
                                 logger.info(f"Found user message in data: '{text}'")
             
-            # If we found user messages in data parts, take the MOST RECENT one
+           
             if user_messages:
-                user_message = user_messages[-1]  # Last one is most recent
+                user_message = user_messages[-1]  
                 logger.info(f"Selected most recent user message from data: '{user_message}'")
             
-            # FALLBACK: If no user messages found in data, check regular text parts
-            # but be careful to avoid Telex's AI responses
+            
             if not user_message:
                 text_parts = []
                 for part in parts:
                     if part.get("kind") == "text" and part.get("text"):
                         text = part.get("text", "").strip()
-                        # Filter out bot responses
+                        
                         if text and not self.is_bot_response(text):
                             text_parts.append(text)
                             logger.info(f"Found text part (filtered): '{text}'")
@@ -278,7 +277,7 @@ class A2AHealthView(View):
 
             session_id = context_id
 
-            # Generate response
+           
             if not user_message:
                 response_text = "Hello! I'm Health Buddy, your dedicated health and wellness assistant! I'm here to help with nutrition, exercise, mental health, sleep, and all health-related questions. How can I support your wellness journey today?"
                 logger.info("Sending default greeting (no user message)")
@@ -300,10 +299,10 @@ class A2AHealthView(View):
             return self.build_error_response(request_id, -32603, f"Internal error: {str(e)}")
 
     def is_bot_response(self, text: str) -> bool:
-        """Check if text is a bot/AI response (not a user message)"""
+        
         text_lower = text.lower()
         
-        # Indicators that this is a bot/AI response, not a user message
+        
         bot_indicators = [
             'here are some', 'steps you can take', 'suggestions to help',
             'advice for', 'tips that might help', 'consider taking',
@@ -313,7 +312,7 @@ class A2AHealthView(View):
             'stay hydrated', 'see a dentist'
         ]
         
-        # If the text starts with any of these patterns, it's likely a bot response
+      
         return any(text_lower.startswith(indicator) for indicator in bot_indicators) or any(indicator in text_lower for indicator in bot_indicators)
 
     def handle_help(self, request_id, params):
@@ -377,7 +376,7 @@ class A2AHealthView(View):
         message_id = str(uuid.uuid4())
         artifact_id = str(uuid.uuid4())
         
-        # Create response following documentation structure
+        
         response_message = {
             "kind": "message",
             "role": "agent",
@@ -395,12 +394,12 @@ class A2AHealthView(View):
             "jsonrpc": "2.0",
             "id": request_id,
             "result": {
-                "id": task_id,  # Use the incoming task_id
-                "contextId": context_id,  # Use the incoming context_id
+                "id": task_id, 
+                "contextId": context_id, 
                 "status": {
                     "state": "completed",
-                    "timestamp": datetime.utcnow().isoformat() + "Z",  # With Z like documentation
-                    "message": response_message  # Message inside status like documentation
+                    "timestamp": datetime.utcnow().isoformat() + "Z",  
+                    "message": response_message  
                 },
                 "artifacts": [
                     {
