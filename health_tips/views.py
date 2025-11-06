@@ -226,25 +226,55 @@ class A2AHealthView(View):
             # Log all parts for debugging
             for i, part in enumerate(parts):
                 part_kind = part.get('kind', 'unknown')
-                part_text = part.get('text', '')[:100]  # Limit text length for logs
+                part_text = part.get('text', '')[:100] if part.get('text') else 'NO_TEXT'
                 logger.info(f"Part {i}: kind={part_kind}, text_preview='{part_text}'")
+                
+                # Also log data parts if they exist
+                if part.get('data'):
+                    logger.info(f"Part {i} data: {part.get('data')}")
+
+            # STRATEGY: Look for user messages in DATA parts (conversation history)
+            user_messages = []
             
-            # Look for text parts (following documentation pattern)
-            text_parts = []
             for part in parts:
-                if part.get("kind") == "text" and part.get("text"):
-                    text = part.get("text", "").strip()
-                    if text:
-                        text_parts.append(text)
-                        logger.info(f"Found text part: '{text}'")
+                if part.get("kind") == "data" and part.get("data"):
+                    data_items = part.get("data", [])
+                    logger.info(f"Found data part with {len(data_items)} items")
+                    
+                    for item in data_items:
+                        if (isinstance(item, dict) and 
+                            item.get("kind") == "text" and 
+                            item.get("text")):
+                            
+                            text = item.get("text", "").strip()
+                            # Look for user messages (not bot responses)
+                            if text and not self.is_bot_response(text):
+                                user_messages.append(text)
+                                logger.info(f"Found user message in data: '{text}'")
             
-            # Take the LAST text part as the user message (most recent)
-            if text_parts:
-                user_message = text_parts[-1]
-                logger.info(f"Selected user message: '{user_message}' (from {len(text_parts)} text parts)")
-            else:
-                logger.warning("No text parts found in request")
-                user_message = ""
+            # If we found user messages in data parts, take the MOST RECENT one
+            if user_messages:
+                user_message = user_messages[-1]  # Last one is most recent
+                logger.info(f"Selected most recent user message from data: '{user_message}'")
+            
+            # FALLBACK: If no user messages found in data, check regular text parts
+            # but be careful to avoid Telex's AI responses
+            if not user_message:
+                text_parts = []
+                for part in parts:
+                    if part.get("kind") == "text" and part.get("text"):
+                        text = part.get("text", "").strip()
+                        # Filter out bot responses
+                        if text and not self.is_bot_response(text):
+                            text_parts.append(text)
+                            logger.info(f"Found text part (filtered): '{text}'")
+                
+                if text_parts:
+                    user_message = text_parts[-1]
+                    logger.info(f"Selected user message from text parts: '{user_message}'")
+                else:
+                    logger.warning("No user messages found in request")
+                    user_message = ""
 
             session_id = context_id
 
@@ -268,6 +298,23 @@ class A2AHealthView(View):
         except Exception as e:
             logger.exception(f"Error in handle_message_send: {str(e)}")
             return self.build_error_response(request_id, -32603, f"Internal error: {str(e)}")
+
+def is_bot_response(self, text: str) -> bool:
+    """Check if text is a bot/AI response (not a user message)"""
+    text_lower = text.lower()
+    
+    # Indicators that this is a bot/AI response, not a user message
+    bot_indicators = [
+        'here are some', 'steps you can take', 'suggestions to help',
+        'advice for', 'tips that might help', 'consider taking',
+        'you can use', 'it\'s essential to', 'contact a healthcare',
+        'rinse with warm salt water', 'over-the-counter', 'cold compress',
+        'avoid irritating foods', 'maintain oral hygiene', 'topical anesthetics',
+        'stay hydrated', 'see a dentist'
+    ]
+    
+    # If the text starts with any of these patterns, it's likely a bot response
+    return any(text_lower.startswith(indicator) for indicator in bot_indicators) or any(indicator in text_lower for indicator in bot_indicators)
 
     def handle_help(self, request_id, params):
         logger.info(f"Processing help request: {request_id}")
