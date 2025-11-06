@@ -8,6 +8,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.utils.decorators import method_decorator
 from django.utils import timezone
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -33,46 +34,16 @@ EXAMPLES OF HEALTH TOPICS TO ANSWER:
 - Any health-related concerns
 """
 
-OFF_TOPIC_WORDS = [
-    'movie','movies','music','sport','sports','game','games','gaming',
-    'stock','stocks','crypto','bitcoin','ethereum','politics','political',
-    'weather','recipe','recipes','cooking','baking',
-    'car','cars','vehicle','phone','computer','javascript','react','python',
-    'programming','coding','software','book','books','novel',
-    'celebrity','celebrities','actor','actress','vacation','travel',
-    'restaurant','hobby','hobbies','craft','shopping'
-]
-OFF_TOPIC_REGEX = re.compile(r'\b(' + r'|'.join(re.escape(w) for w in OFF_TOPIC_WORDS) + r')\b', re.IGNORECASE)
-
-HEALTH_KEYWORDS = [
-    'health','wellness','nutrition','diet','exercise','fitness','mental','stress',
-    'sleep','medical','doctor','hospital','pain','illness','symptom','treatment',
-    'medicine','vitamin','weight','workout','yoga','meditation','therapy','healthy',
-    'condition','diagnosis','recovery','cardio','calorie','protein','hydration',
-    'depression','anxiety','insomnia','fatigue','blood pressure','cholesterol',
-    'diabetes','heart','lung','brain','rehabilitation','prevention'
-]
-HEALTH_REGEX = re.compile(r'\b(' + r'|'.join(re.escape(w) for w in HEALTH_KEYWORDS) + r')\b', re.IGNORECASE)
-
 REFUSAL_TEXT = "I specialize only in health and wellness topics. I can help with nutrition, exercise, mental health, sleep, or other health-related questions!"
-
-def contains_off_topic(text: str) -> bool:
-    return bool(OFF_TOPIC_REGEX.search(text or ""))
-
-def contains_health_keyword(text: str) -> bool:
-    return bool(HEALTH_REGEX.search(text or ""))
 
 GENAI_CLIENT_AVAILABLE = False
 try:
     from google import genai
     GENAI_CLIENT_AVAILABLE = True
-    logger.info("✅ New google-genai client available")
+    logger.info("New google-genai client available")
 except ImportError as e:
     logger.warning(f"New google-genai not available: {e}")
     GENAI_CLIENT_AVAILABLE = False
-
-OLD_GENAI_AVAILABLE = False
-
 
 class GeminiHealthChat:
     def __init__(self):
@@ -110,11 +81,14 @@ class GeminiHealthChat:
         if session_id in self.conversation_history:
             del self.conversation_history[session_id]
 
-    def fallback_chat(self, user_message: str, session_id: str = "default"):
+    def chat(self, user_message: str, session_id: str = "default"):
+        logger.info(f"Processing user message: '{user_message}' for session: {session_id}")
+        
         user_lower = user_message.lower()
         clearly_off_topic = any(word in user_lower for word in ['movie', 'sport', 'game', 'music', 'stock', 'crypto', 'weather'])
         
         if clearly_off_topic:
+            logger.info("Message detected as off-topic, sending refusal")
             return REFUSAL_TEXT
         
         try:
@@ -140,7 +114,7 @@ class GeminiHealthChat:
                     text = str(response)
                 
                 text = text.strip()
-                logger.info(f"Gemini response: '{text}'")
+                logger.info(f"Gemini response received: '{text}'")
                 
                 history = self.get_conversation_history(session_id)
                 history.append({"role": "user", "content": user_message})
@@ -150,106 +124,62 @@ class GeminiHealthChat:
                 return text
                 
             else:
-                logger.warning("Gemini client not available")
+                logger.warning("Gemini client not available, using fallback response")
                 return "Hello! I'm Health Buddy. I specialize in health and wellness topics. How can I assist you today?"
                 
         except Exception as e:
             logger.error(f"Gemini API call failed: {str(e)}")
-            return self.get_conversational_fallback(user_message)
-
-    def get_conversational_fallback(self, user_message: str) -> str:
-        user_lower = user_message.lower()
-        
-        if any(word in user_lower for word in ['migraine', 'headache', 'head', 'pain']):
-            return "I understand you're dealing with head pain. Migraines can be challenging. General wellness tips include staying hydrated, resting in a quiet environment, and managing stress. For persistent issues, consulting a healthcare provider is recommended."
-        
-        elif any(word in user_lower for word in ['diet', 'nutrition', 'food', 'eat']):
-            return "Nutrition is key to overall health! A balanced diet with fruits, vegetables, and whole grains supports wellbeing. Are you interested in specific nutrition topics?"
-        
-        elif any(word in user_lower for word in ['exercise', 'workout', 'fitness']):
-            return "Regular exercise benefits both physical and mental health! Finding activities you enjoy makes consistency easier. What type of movement interests you?"
-        
-        elif any(word in user_lower for word in ['sleep', 'tired', 'insomnia']):
-            return "Quality sleep is essential! Consistent routines and comfortable environments can improve sleep. Are you having trouble with sleep patterns?"
-        
-        elif any(word in user_lower for word in ['stress', 'anxiety', 'mental']):
-            return "Mental wellness matters! Techniques like deep breathing, mindfulness, and social connection can help manage stress. Would you like to explore wellness strategies?"
-        
-        else:
-            return "Hello! I'm Health Buddy, your wellness assistant. I'd love to help with health topics like nutrition, exercise, sleep, stress management, or general wellbeing. What would you like to discuss?"
-
-    def guardrails_chat(self, user_message: str, session_id: str = "default"):
-        return self.fallback_chat(user_message, session_id)
-
-    def chat(self, user_message: str, session_id: str = "default"):
-        return self.fallback_chat(user_message, session_id)
-
-class JSONErrorResponse:
-    @staticmethod
-    def error(request_id, code, message, data=None):
-        return JsonResponse({
-            "jsonrpc": "2.0",
-            "id": request_id,
-            "error": {
-                "code": code,
-                "message": message,
-                "data": data or {}
-            }
-        })
-
-    @staticmethod
-    def internal_error(request_id, details=None):
-        return JSONErrorResponse.error(
-            request_id,
-            -32603,
-            "Internal error",
-            {"details": details}
-        )
-
-    @staticmethod
-    def invalid_params(request_id, details=None):
-        return JSONErrorResponse.error(
-            request_id,
-            -32602,
-            "Invalid params",
-            {"details": details}
-        )
-
-    @staticmethod
-    def invalid_request(request_id, details=None):
-        return JSONErrorResponse.error(
-            request_id,
-            -32600,
-            "Invalid Request",
-            {"details": details}
-        )
+            # Simple fallback responses
+            user_lower = user_message.lower()
+            if any(word in user_lower for word in ['headache', 'migraine', 'head pain']):
+                return "I understand you're dealing with head pain. General wellness tips include staying hydrated, resting in a quiet environment, and managing stress. For persistent issues, consulting a healthcare provider is recommended."
+            elif any(word in user_lower for word in ['diet', 'nutrition', 'food']):
+                return "Nutrition is key to overall health! A balanced diet with fruits, vegetables, and whole grains supports wellbeing."
+            elif any(word in user_lower for word in ['exercise', 'workout', 'fitness']):
+                return "Regular exercise benefits both physical and mental health! Finding activities you enjoy makes consistency easier."
+            elif any(word in user_lower for word in ['sleep', 'tired', 'insomnia']):
+                return "Quality sleep is essential! Consistent routines and comfortable environments can improve sleep."
+            elif any(word in user_lower for word in ['stress', 'anxiety', 'mental']):
+                return "Mental wellness matters! Techniques like deep breathing, mindfulness, and social connection can help manage stress."
+            else:
+                return "Hello! I'm Health Buddy, your wellness assistant. I'd love to help with health topics like nutrition, exercise, sleep, stress management, or general wellbeing. What would you like to discuss?"
 
 @method_decorator(csrf_exempt, name='dispatch')
 class A2AHealthView(View):
     def __init__(self):
         super().__init__()
+        logger.info("Initializing A2AHealthView...")
         self.gemini_chat = GeminiHealthChat()
+        logger.info(f"Gemini chat available: {self.gemini_chat.available}")
 
     def post(self, request):
+        logger.info("Received POST request to A2A endpoint")
         try:
             try:
                 body = json.loads(request.body)
+                logger.info(f"Request body parsed successfully, ID: {body.get('id', 'unknown')}")
             except json.JSONDecodeError:
                 logger.error("Invalid JSON in request body")
-                return self.build_method_error_response(None, "Invalid JSON format")
+                return self.build_error_response(None, -32700, "Parse error: Invalid JSON")
 
-            if not body:
-                return self.build_method_error_response(None, "Unknown method. Use 'message/send' or 'help'.")
+            # Validate JSON-RPC 2.0 basics
+            if body.get("jsonrpc") != "2.0" or "id" not in body:
+                logger.error("Invalid JSON-RPC request: missing jsonrpc or id")
+                return self.build_error_response(
+                    body.get("id"), 
+                    -32600, 
+                    "Invalid Request: jsonrpc must be '2.0' and id is required"
+                )
 
             request_id = body.get("id", "")
             method = body.get("method")
             
             if not method:
-                return self.build_method_error_response(request_id, "Unknown method. Use 'message/send' or 'help'.")
+                logger.error("No method specified in request")
+                return self.build_error_response(request_id, -32601, "Method not found")
 
             params = body.get("params", {})
-
-            logger.info(f"Processing A2A request: {method}, ID: {request_id}")
+            logger.info(f"Processing A2A request: method={method}, ID={request_id}")
 
             if method == "message/send":
                 return self.handle_message_send(request_id, params)
@@ -257,163 +187,122 @@ class A2AHealthView(View):
                 return self.handle_help(request_id, params)
             else:
                 logger.error(f"Method not found: {method}")
-                return self.build_method_error_response(request_id, f"Unknown method. Use 'message/send' or 'help'.")
+                return self.build_error_response(request_id, -32601, f"Method not found: {method}")
 
         except Exception as e:
-            logger.exception("Unexpected error in A2A endpoint")
-            return self.build_method_error_response(body.get("id") if 'body' in locals() else None, "Internal server error")
+            logger.exception(f"Unexpected error in A2A endpoint: {str(e)}")
+            return self.build_error_response(
+                body.get("id") if 'body' in locals() else None, 
+                -32603, 
+                f"Internal error: {str(e)}"
+            )
 
-    def build_method_error_response(self, request_id, message):
-        from datetime import datetime
-        error_task_id = str(uuid.uuid4())
-        error_context_id = str(uuid.uuid4())
-        error_message_id = str(uuid.uuid4())
-        artifact_id = str(uuid.uuid4())
-        
-       
-        timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-        
+    def build_error_response(self, request_id, code, message):
+        logger.info(f"Building error response: code={code}, message={message}")
         return JsonResponse({
             "jsonrpc": "2.0",
             "id": request_id or "",
-            "result": {
-                "id": error_task_id,
-                "contextId": error_context_id,
-                "status": {
-                    "state": "failed",
-                    "timestamp": timestamp,
-                    "message": {
-                        "kind": "message",
-                        "role": "agent", 
-                        "parts": [
-                            {
-                                "kind": "text",
-                                "text": message,
-                                "data": None, 
-                                "file_url": None  
-                            }
-                        ],
-                        "messageId": error_message_id,
-                        "taskId": None,
-                        "metadata": None
-                    }
-                },
-                "artifacts": [
-                    {
-                        "artifactId": artifact_id,
-                        "name": "assistantResponse",
-                        "parts": [
-                            {
-                                "kind": "text", 
-                                "text": message,
-                                "data": None, 
-                                "file_url": None  
-                            }
-                        ]
-                    }
-                ],
-                "history": [],
-                "kind": "task"
+            "error": {
+                "code": code,
+                "message": message,
+                "data": {}
             }
         })
 
     def handle_message_send(self, request_id, params):
+        logger.info(f"Processing message/send request: {request_id}")
         try:
             message = params.get("message", {})
             context_id = message.get("taskId") or str(uuid.uuid4())
             task_id = message.get("messageId") or str(uuid.uuid4())
 
+            logger.info(f"Context ID: {context_id}, Task ID: {task_id}")
+            
             user_message = ""
+            parts = message.get("parts", [])
             
-            # SIMPLE APPROACH: Collect ALL text from ALL parts and data
-            all_texts = []
+            logger.info(f"Found {len(parts)} parts in message")
             
-            # Check main parts
-            for part in message.get("parts", []):
-                if part.get("kind") == "text":
-                    all_texts.append(part.get("text", "").strip())
-                
-                # Check data parts
-                elif part.get("kind") == "data":
-                    for data_item in part.get("data", []):
-                        if data_item.get("kind") == "text":
-                            all_texts.append(data_item.get("text", "").strip())
+            # Log all parts for debugging
+            for i, part in enumerate(parts):
+                part_kind = part.get('kind', 'unknown')
+                part_text = part.get('text', '')[:100]  # Limit text length for logs
+                logger.info(f"Part {i}: kind={part_kind}, text_preview='{part_text}'")
             
-            # ALWAYS take the VERY LAST text item
-            if all_texts:
-                user_message = all_texts[-1]
-                logger.info(f"Extracted user message: '{user_message}' from {len(all_texts)} total texts")
+            # Look for text parts (following documentation pattern)
+            text_parts = []
+            for part in parts:
+                if part.get("kind") == "text" and part.get("text"):
+                    text = part.get("text", "").strip()
+                    if text:
+                        text_parts.append(text)
+                        logger.info(f"Found text part: '{text}'")
             
-            # If still no message found, use fallback
-            if not user_message:
-                logger.warning("No user message found in request")
+            # Take the LAST text part as the user message (most recent)
+            if text_parts:
+                user_message = text_parts[-1]
+                logger.info(f"Selected user message: '{user_message}' (from {len(text_parts)} text parts)")
+            else:
+                logger.warning("No text parts found in request")
                 user_message = ""
 
-            session_id = context_id 
+            session_id = context_id
 
+            # Generate response
             if not user_message:
-                response_text = "Hello! I'm Health Buddy, your dedicated health and wellness assistant! 😊 I'm here to help with nutrition, exercise, mental health, sleep, and all health-related questions. How can I support your wellness journey today?"
+                response_text = "Hello! I'm Health Buddy, your dedicated health and wellness assistant! I'm here to help with nutrition, exercise, mental health, sleep, and all health-related questions. How can I support your wellness journey today?"
+                logger.info("Sending default greeting (no user message)")
             elif user_message.lower() in ['hi', 'hello', 'how are you', 'hey', 'whats up', "what's up"]:
-                response_text = "Hello! I'm Health Buddy, your dedicated health and wellness assistant! 😊 I'm here to help with nutrition, exercise, mental health, sleep, and all health-related questions. How can I support your wellness journey today?"
+                response_text = "Hello! I'm Health Buddy, your dedicated health and wellness assistant! I'm here to help with nutrition, exercise, mental health, sleep, and all health-related questions. How can I support your wellness journey today?"
+                logger.info("Sending greeting response")
             else:
+                logger.info(f"Sending to Gemini: '{user_message}'")
                 response_text = self.gemini_chat.chat(user_message, session_id)
-
-            logger.info(f"Conversational response for: {user_message}")
+                logger.info(f"Gemini response: '{response_text}'")
 
             response = self.build_success_response(request_id, response_text, context_id, task_id)
+            logger.info(f"Successfully built response for request: {request_id}")
+            
             return JsonResponse(response)
 
         except Exception as e:
-            logger.exception("Error in handle_message_send")
-            return JSONErrorResponse.internal_error(request_id, str(e))
+            logger.exception(f"Error in handle_message_send: {str(e)}")
+            return self.build_error_response(request_id, -32603, f"Internal error: {str(e)}")
 
     def handle_help(self, request_id, params):
-        
-        from datetime import datetime
-        task_id = params.get("taskId") or str(uuid.uuid4())
-        context_id = params.get("contextId") or str(uuid.uuid4())
-        message_id = str(uuid.uuid4())
-        artifact_id = str(uuid.uuid4())
-        
-        timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-        
+        logger.info(f"Processing help request: {request_id}")
         help_text = "Available methods: 'message/send' for sending messages, 'help' for this information."
         
         return JsonResponse({
             "jsonrpc": "2.0",
             "id": request_id,
             "result": {
-                "id": task_id,
-                "contextId": context_id,
+                "id": str(uuid.uuid4()),
+                "contextId": str(uuid.uuid4()),
                 "status": {
                     "state": "completed",
-                    "timestamp": timestamp,
+                    "timestamp": datetime.utcnow().isoformat() + "Z",
                     "message": {
                         "kind": "message",
                         "role": "agent",
                         "parts": [
                             {
                                 "kind": "text",
-                                "text": help_text,
-                                "data": None,
-                                "file_url": None
+                                "text": help_text
                             }
                         ],
-                        "messageId": message_id,
-                        "taskId": task_id,
-                        "metadata": None
+                        "messageId": str(uuid.uuid4()),
+                        "taskId": str(uuid.uuid4())
                     }
                 },
                 "artifacts": [
                     {
-                        "artifactId": artifact_id,
+                        "artifactId": str(uuid.uuid4()),
                         "name": "assistantResponse",
                         "parts": [
                             {
                                 "kind": "text",
-                                "text": help_text,
-                                "data": None,
-                                "file_url": None
+                                "text": help_text
                             }
                         ]
                     }
@@ -425,14 +314,11 @@ class A2AHealthView(View):
                         "parts": [
                             {
                                 "kind": "text",
-                                "text": help_text,
-                                "data": None,
-                                "file_url": None
+                                "text": help_text
                             }
                         ],
-                        "messageId": message_id,
-                        "taskId": task_id,
-                        "metadata": None
+                        "messageId": str(uuid.uuid4()),
+                        "taskId": str(uuid.uuid4())
                     }
                 ],
                 "kind": "task"
@@ -440,37 +326,34 @@ class A2AHealthView(View):
         })
 
     def build_success_response(self, request_id, response_text, context_id, task_id):
-        from datetime import datetime
+        logger.info(f"Building success response for request: {request_id}")
         message_id = str(uuid.uuid4())
         artifact_id = str(uuid.uuid4())
         
-        
-        timestamp = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
-        
-        return {
+        # Create response following documentation structure
+        response_message = {
+            "kind": "message",
+            "role": "agent",
+            "parts": [
+                {
+                    "kind": "text",
+                    "text": response_text
+                }
+            ],
+            "messageId": message_id,
+            "taskId": task_id
+        }
+
+        response_data = {
             "jsonrpc": "2.0",
             "id": request_id,
             "result": {
-                "id": task_id,
-                "contextId": context_id,
+                "id": task_id,  # Use the incoming task_id
+                "contextId": context_id,  # Use the incoming context_id
                 "status": {
                     "state": "completed",
-                    "timestamp": timestamp,
-                    "message": {
-                        "kind": "message",
-                        "role": "agent",
-                        "parts": [
-                            {
-                                "kind": "text",
-                                "text": response_text,
-                                "data": None,  
-                                "file_url": None  
-                            }
-                        ],
-                        "messageId": message_id,
-                        "taskId": task_id,
-                        "metadata": None
-                    }
+                    "timestamp": datetime.utcnow().isoformat() + "Z",  # With Z like documentation
+                    "message": response_message  # Message inside status like documentation
                 },
                 "artifacts": [
                     {
@@ -479,51 +362,47 @@ class A2AHealthView(View):
                         "parts": [
                             {
                                 "kind": "text",
-                                "text": response_text,
-                                "data": None,  
-                                "file_url": None  
+                                "text": response_text
                             }
                         ]
                     }
                 ],
-                "history": [
-                    {
-                        "kind": "message",
-                        "role": "agent",
-                        "parts": [
-                            {
-                                "kind": "text",
-                                "text": response_text,
-                                "data": None,  
-                                "file_url": None  
-                            }
-                        ],
-                        "messageId": message_id,
-                        "taskId": task_id,
-                        "metadata": None
-                    }
-                ],
+                "history": [response_message],
                 "kind": "task"
             }
         }
+        
+        logger.info(f"Success response built with context_id: {context_id}, task_id: {task_id}")
+        return response_data
 
 class HealthCheckView(View):
     def __init__(self):
         super().__init__()
+        logger.info("Initializing HealthCheckView...")
         self.gemini_chat = GeminiHealthChat()
+        logger.info(f"Gemini chat available: {self.gemini_chat.available}")
 
     def get(self, request):
+        logger.info("Health check requested")
         test_response = "Not tested"
         if self.gemini_chat.available:
             try:
+                logger.info("Testing Gemini connection...")
                 test_response = self.gemini_chat.chat("test health question")
+                logger.info(f"Gemini test successful: {test_response}")
             except Exception as e:
+                logger.error(f"Gemini test failed: {str(e)}")
                 test_response = f"Error: {str(e)}"
+        else:
+            logger.warning("Gemini not available")
         
-        return JsonResponse({
+        health_data = {
             "status": "healthy",
             "service": "health_conversation_agent",
             "timestamp": timezone.now().isoformat(),
             "gemini_available": self.gemini_chat.available,
             "test_response": test_response
-        })
+        }
+        
+        logger.info(f"Health check response: {health_data}")
+        return JsonResponse(health_data)
