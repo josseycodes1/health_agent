@@ -299,22 +299,22 @@ class A2AHealthView(View):
             logger.exception(f"Error in handle_message_send: {str(e)}")
             return self.build_error_response(request_id, -32603, f"Internal error: {str(e)}")
 
-def is_bot_response(self, text: str) -> bool:
-    """Check if text is a bot/AI response (not a user message)"""
-    text_lower = text.lower()
-    
-    # Indicators that this is a bot/AI response, not a user message
-    bot_indicators = [
-        'here are some', 'steps you can take', 'suggestions to help',
-        'advice for', 'tips that might help', 'consider taking',
-        'you can use', 'it\'s essential to', 'contact a healthcare',
-        'rinse with warm salt water', 'over-the-counter', 'cold compress',
-        'avoid irritating foods', 'maintain oral hygiene', 'topical anesthetics',
-        'stay hydrated', 'see a dentist'
-    ]
-    
-    # If the text starts with any of these patterns, it's likely a bot response
-    return any(text_lower.startswith(indicator) for indicator in bot_indicators) or any(indicator in text_lower for indicator in bot_indicators)
+    def is_bot_response(self, text: str) -> bool:
+        """Check if text is a bot/AI response (not a user message)"""
+        text_lower = text.lower()
+        
+        # Indicators that this is a bot/AI response, not a user message
+        bot_indicators = [
+            'here are some', 'steps you can take', 'suggestions to help',
+            'advice for', 'tips that might help', 'consider taking',
+            'you can use', 'it\'s essential to', 'contact a healthcare',
+            'rinse with warm salt water', 'over-the-counter', 'cold compress',
+            'avoid irritating foods', 'maintain oral hygiene', 'topical anesthetics',
+            'stay hydrated', 'see a dentist'
+        ]
+        
+        # If the text starts with any of these patterns, it's likely a bot response
+        return any(text_lower.startswith(indicator) for indicator in bot_indicators) or any(indicator in text_lower for indicator in bot_indicators)
 
     def handle_help(self, request_id, params):
         logger.info(f"Processing help request: {request_id}")
